@@ -142,23 +142,141 @@ echo "  Admin Email: $ADMIN_EMAIL"
 echo "  Storage Location: $SCRIPT_DIR"
 echo ""
 
-# Checkpoint and credentials files - stored in script directory
-CHECKPOINT_FILE="$SCRIPT_DIR/opensocial_moodle_ddev_install.checkpoint"
+# Credentials file - stored in script directory
 CREDENTIALS_FILE="$SCRIPT_DIR/opensocial_moodle_ddev_credentials.txt"
 
-# Initialize checkpoint
-if [ ! -f "$CHECKPOINT_FILE" ]; then
-    touch "$CHECKPOINT_FILE"
-fi
-
-# Checkpoint functions
-mark_complete() {
-    echo "$1=done" >> "$CHECKPOINT_FILE"
+# State checking functions - actually verify if steps are complete
+check_system_updated() {
+    # Check if system was recently updated (within last 7 days)
+    if [ -f /var/log/apt/history.log ]; then
+        local last_update=$(stat -c %Y /var/log/apt/history.log 2>/dev/null || echo 0)
+        local current_time=$(date +%s)
+        local seven_days=$((7 * 24 * 60 * 60))
+        [ $((current_time - last_update)) -lt $seven_days ]
+    else
+        return 1
+    fi
 }
 
-is_complete() {
-    grep -q "^$1=done$" "$CHECKPOINT_FILE" 2>/dev/null
-    return $?
+check_prerequisites_installed() {
+    command -v curl &> /dev/null && \
+    command -v git &> /dev/null && \
+    command -v unzip &> /dev/null && \
+    command -v wget &> /dev/null
+}
+
+check_docker_installed() {
+    command -v docker &> /dev/null && \
+    docker --version &> /dev/null
+}
+
+check_ddev_installed() {
+    command -v ddev &> /dev/null && \
+    ddev version &> /dev/null
+}
+
+check_mkcert_installed() {
+    command -v mkcert &> /dev/null && \
+    mkcert -help &> /dev/null 2>&1
+}
+
+check_opensocial_dir_exists() {
+    [ -d "$OPENSOCIAL_DIR" ] && [ -w "$OPENSOCIAL_DIR" ]
+}
+
+check_opensocial_ddev_configured() {
+    [ -f "$OPENSOCIAL_DIR/.ddev/config.yaml" ]
+}
+
+check_opensocial_ddev_running() {
+    [ -d "$OPENSOCIAL_DIR" ] && \
+    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev describe >/dev/null 2>&1"
+}
+
+check_opensocial_composer_installed() {
+    [ -f "$OPENSOCIAL_DIR/composer.json" ] && \
+    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush --version >/dev/null 2>&1"
+}
+
+check_opensocial_private_configured() {
+    local private_dir="$OPENSOCIAL_DIR/../private"
+    [ -d "$private_dir" ] && [ -w "$private_dir" ]
+}
+
+check_opensocial_installed() {
+    [ -d "$OPENSOCIAL_DIR" ] && \
+    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"
+}
+
+check_moodle_dir_exists() {
+    [ -d "$MOODLE_DIR" ] && [ -w "$MOODLE_DIR" ]
+}
+
+check_moodle_downloaded() {
+    [ -f "$MOODLE_DIR/html/version.php" ]
+}
+
+check_moodle_ddev_configured() {
+    [ -f "$MOODLE_DIR/.ddev/config.yaml" ]
+}
+
+check_moodle_ddev_running() {
+    [ -d "$MOODLE_DIR" ] && \
+    su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev describe >/dev/null 2>&1"
+}
+
+check_moodle_data_exists() {
+    [ -d "$MOODLE_DIR/moodledata" ] && [ -w "$MOODLE_DIR/moodledata" ]
+}
+
+check_moodle_installed() {
+    [ -f "$MOODLE_DIR/html/config.php" ]
+}
+
+check_simple_oauth_installed() {
+    [ -d "$OPENSOCIAL_DIR" ] && \
+    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q simple_oauth"
+}
+
+check_oauth_keys_exist() {
+    [ -f "$OPENSOCIAL_DIR/keys/private.key" ] && \
+    [ -f "$OPENSOCIAL_DIR/keys/public.key" ] && \
+    openssl rsa -in "$OPENSOCIAL_DIR/keys/private.key" -check -noout >/dev/null 2>&1
+}
+
+check_oauth_configured() {
+    local expected_public="/var/www/html/../keys/public.key"
+    local current_public=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:get simple_oauth.settings public_key --format=string 2>/dev/null" || echo "")
+    [ "$current_public" = "$expected_public" ]
+}
+
+check_oauth_provider_module_exists() {
+    [ -f "$OPENSOCIAL_DIR/html/modules/custom/opensocial_oauth_provider/opensocial_oauth_provider.info.yml" ]
+}
+
+check_oauth_provider_enabled() {
+    [ -d "$OPENSOCIAL_DIR" ] && \
+    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q opensocial_oauth_provider"
+}
+
+check_oauth_client_exists() {
+    [ -d "$OPENSOCIAL_DIR" ] && \
+    local client_check=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush php-eval \"
+\\$clients = \\Drupal\\consumers\\Entity\\Consumer::loadMultiple();
+foreach (\\$clients as \\$client) {
+  if (\\$client->get('client_id')->value == '$OAUTH_CLIENT_ID') {
+    echo 'EXISTS';
+    exit;
+  }
+}
+echo 'NOT_FOUND';
+\"" 2>/dev/null)
+    [ "$client_check" = "EXISTS" ]
+}
+
+check_moodle_oauth_plugin_exists() {
+    [ -f "$MOODLE_DIR/html/auth/opensocial/version.php" ] && \
+    [ -f "$MOODLE_DIR/html/auth/opensocial/auth.php" ]
 }
 
 ################################################################################
@@ -167,17 +285,18 @@ is_complete() {
 
 print_section "PART 1: System Prerequisites"
 
-if ! is_complete "STEP_SYSTEM_UPDATE"; then
-    print_step "Updating system packages..."
+print_step "Checking if system packages need updating..."
+if ! check_system_updated; then
+    print_status "System needs updating..."
     apt update && apt upgrade -y
-    mark_complete "STEP_SYSTEM_UPDATE"
     print_status "✓ System updated"
 else
-    print_status "✓ System already updated (skipping)"
+    print_status "✓ System recently updated (within last 7 days - skipping)"
 fi
 
-if ! is_complete "STEP_PREREQUISITES"; then
-    print_step "Installing system prerequisites..."
+print_step "Checking system prerequisites (curl, git, unzip, wget)..."
+if ! check_prerequisites_installed; then
+    print_status "Installing missing prerequisites..."
     
     PACKAGES=(
         "ca-certificates"
@@ -193,10 +312,9 @@ if ! is_complete "STEP_PREREQUISITES"; then
     )
     
     apt install -y "${PACKAGES[@]}"
-    mark_complete "STEP_PREREQUISITES"
     print_status "✓ Prerequisites installed"
 else
-    print_status "✓ Prerequisites already installed (skipping)"
+    print_status "✓ All prerequisites already installed (skipping)"
 fi
 
 ################################################################################
@@ -205,9 +323,10 @@ fi
 
 print_section "PART 2: Docker and DDEV Installation"
 
-if ! is_complete "STEP_DOCKER"; then
+print_step "Checking if Docker is installed and working..."
+if ! check_docker_installed; then
     if ! command -v docker &> /dev/null; then
-        print_step "Installing Docker..."
+        print_status "Docker not found - installing..."
         
         # Add Docker's official GPG key
         mkdir -p /etc/apt/keyrings
@@ -229,26 +348,26 @@ if ! is_complete "STEP_DOCKER"; then
     else
         print_status "✓ Docker already installed"
     fi
-    mark_complete "STEP_DOCKER"
 else
-    print_status "✓ Docker already installed (skipping)"
+    print_status "✓ Docker already installed and working (skipping)"
 fi
 
-if ! is_complete "STEP_DDEV"; then
+print_step "Checking if DDEV is installed and working..."
+if ! check_ddev_installed; then
     if ! command -v ddev &> /dev/null; then
-        print_step "Installing DDEV..."
+        print_status "DDEV not found - installing..."
         curl -fsSL https://ddev.com/install.sh | bash
         print_status "✓ DDEV installed"
     else
         print_status "✓ DDEV already installed"
     fi
-    mark_complete "STEP_DDEV"
 else
-    print_status "✓ DDEV already installed (skipping)"
+    print_status "✓ DDEV already installed and working (skipping)"
 fi
 
-if ! is_complete "STEP_MKCERT"; then
-    print_step "Installing mkcert for HTTPS..."
+print_step "Checking if mkcert is installed for HTTPS..."
+if ! check_mkcert_installed; then
+    print_status "Installing mkcert..."
     
     if ! command -v mkcert &> /dev/null; then
         curl -fsSL https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64 -o mkcert
@@ -259,10 +378,9 @@ if ! is_complete "STEP_MKCERT"; then
     # Install CA as the actual user
     su - $ACTUAL_USER -c "mkcert -install"
     
-    mark_complete "STEP_MKCERT"
     print_status "✓ mkcert installed and CA configured"
 else
-    print_status "✓ mkcert already installed (skipping)"
+    print_status "✓ mkcert already installed and configured (skipping)"
 fi
 
 ################################################################################
@@ -274,8 +392,9 @@ print_section "PART 3: OpenSocial Installation"
 OPENSOCIAL_DIR="$SCRIPT_DIR/$OPENSOCIAL_PROJECT"
 
 # Step 3.1: Create directory
-if ! is_complete "STEP_OPENSOCIAL_DIR"; then
-    print_step "Creating OpenSocial project directory..."
+print_step "Checking if OpenSocial project directory exists..."
+if ! check_opensocial_dir_exists; then
+    print_status "Creating OpenSocial project directory..."
     echo "  📁 Location: $OPENSOCIAL_DIR"
     
     if [ ! -d "$OPENSOCIAL_DIR" ]; then
@@ -287,19 +406,19 @@ if ! is_complete "STEP_OPENSOCIAL_DIR"; then
     
     # Verify directory exists and is writable
     if [ -d "$OPENSOCIAL_DIR" ] && [ -w "$OPENSOCIAL_DIR" ]; then
-        mark_complete "STEP_OPENSOCIAL_DIR"
         print_status "✓ OpenSocial directory verified and writable"
     else
         print_error "Failed to create or access directory: $OPENSOCIAL_DIR"
         exit 1
     fi
 else
-    print_status "✓ OpenSocial directory already exists: $OPENSOCIAL_DIR"
+    print_status "✓ OpenSocial directory already exists and is writable: $OPENSOCIAL_DIR"
 fi
 
 # Step 3.2: Configure DDEV
-if ! is_complete "STEP_OPENSOCIAL_DDEV"; then
-    print_step "Configuring DDEV for OpenSocial..."
+print_step "Checking if DDEV is configured for OpenSocial..."
+if ! check_opensocial_ddev_configured; then
+    print_status "Configuring DDEV for OpenSocial..."
     echo "  📁 Config directory: $OPENSOCIAL_DIR/.ddev/"
     
     # Check if already configured
@@ -339,7 +458,6 @@ EOF
     
     # Verify configuration
     if [ -f "$OPENSOCIAL_DIR/.ddev/config.yaml" ]; then
-        mark_complete "STEP_OPENSOCIAL_DDEV"
         print_status "✓ DDEV configured for OpenSocial"
         echo "  📋 Configuration files:"
         echo "     - $OPENSOCIAL_DIR/.ddev/config.yaml"
@@ -349,12 +467,12 @@ EOF
         exit 1
     fi
 else
-    print_status "✓ DDEV already configured"
+    print_status "✓ DDEV already configured for OpenSocial"
     echo "  📁 Config: $OPENSOCIAL_DIR/.ddev/"
 fi
 
 # Step 3.3: Start DDEV
-if ! is_complete "STEP_OPENSOCIAL_START"; then
+if ! check_opensocial_ddev_running; then
     print_step "Starting OpenSocial DDEV..."
     
     # Check if already running
@@ -366,7 +484,7 @@ if ! is_complete "STEP_OPENSOCIAL_START"; then
     
     # Verify DDEV is running
     if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev describe >/dev/null 2>&1"; then
-        mark_complete "STEP_OPENSOCIAL_START"
+        # OpenSocial DDEV now running
         print_status "✓ OpenSocial DDEV started and verified"
     else
         print_error "Failed to start DDEV"
@@ -382,7 +500,7 @@ else
 fi
 
 # Step 3.4: Install via Composer
-if ! is_complete "STEP_OPENSOCIAL_COMPOSER"; then
+if ! check_opensocial_composer_installed; then
     print_step "Installing OpenSocial via Composer..."
     
     # Check if composer.json already exists
@@ -407,7 +525,7 @@ if ! is_complete "STEP_OPENSOCIAL_COMPOSER"; then
     
     # Verify installation
     if [ -f "$OPENSOCIAL_DIR/composer.json" ] && su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush --version >/dev/null 2>&1"; then
-        mark_complete "STEP_OPENSOCIAL_COMPOSER"
+        # OpenSocial Composer installed
         print_status "✓ OpenSocial installed via Composer"
     else
         print_error "Composer installation failed"
@@ -418,7 +536,7 @@ else
 fi
 
 # Step 3.5: Configure private directory
-if ! is_complete "STEP_OPENSOCIAL_PRIVATE"; then
+if ! check_opensocial_private_configured; then
     print_step "Configuring private file directory..."
     
     PRIVATE_DIR="$OPENSOCIAL_DIR/../private"
@@ -435,7 +553,7 @@ if ! is_complete "STEP_OPENSOCIAL_PRIVATE"; then
     
     # Verify directory
     if [ -d "$PRIVATE_DIR" ] && [ -w "$PRIVATE_DIR" ]; then
-        mark_complete "STEP_OPENSOCIAL_PRIVATE"
+        # OpenSocial private directory configured
         print_status "✓ Private directory configured and writable"
         echo "  📊 Path: $PRIVATE_ABS_PATH"
         echo "  🔒 Permissions: 755"
@@ -450,7 +568,7 @@ else
 fi
 
 # Step 3.6: Install Drupal/OpenSocial
-if ! is_complete "STEP_OPENSOCIAL_INSTALL"; then
+if ! check_opensocial_installed; then
     print_step "Installing Drupal/OpenSocial..."
     
     SETTINGS_DIR="$OPENSOCIAL_DIR/html/sites/default"
@@ -460,7 +578,7 @@ if ! is_complete "STEP_OPENSOCIAL_INSTALL"; then
     # Check if already installed
     if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
         print_status "✓ OpenSocial already installed"
-        mark_complete "STEP_OPENSOCIAL_INSTALL"
+        # OpenSocial installation complete
     else
         # Prepare settings directory
         if [ -d "$SETTINGS_DIR" ]; then
@@ -516,7 +634,7 @@ EOF
             
             # Verify installation
             if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
-                mark_complete "STEP_OPENSOCIAL_INSTALL"
+                # OpenSocial installation complete
                 print_status "✓ OpenSocial installed and verified"
                 echo "  🌐 Site URL: $OPENSOCIAL_URL"
                 echo "  👤 Admin user: $OPENSOCIAL_ADMIN_USER"
@@ -546,7 +664,7 @@ print_section "PART 4: Moodle Installation in DDEV"
 MOODLE_DIR="$SCRIPT_DIR/$MOODLE_PROJECT"
 
 # Step 4.1: Create directory
-if ! is_complete "STEP_MOODLE_DIR"; then
+if ! check_moodle_dir_exists; then
     print_step "Creating Moodle project directory..."
     echo "  📁 Location: $MOODLE_DIR"
     
@@ -559,7 +677,7 @@ if ! is_complete "STEP_MOODLE_DIR"; then
     
     # Verify directory
     if [ -d "$MOODLE_DIR" ] && [ -w "$MOODLE_DIR" ]; then
-        mark_complete "STEP_MOODLE_DIR"
+        # Moodle directory created
         print_status "✓ Moodle directory verified and writable"
     else
         print_error "Failed to create or access directory: $MOODLE_DIR"
@@ -570,7 +688,7 @@ else
 fi
 
 # Step 4.2: Download Moodle
-if ! is_complete "STEP_MOODLE_DOWNLOAD"; then
+if ! check_moodle_downloaded; then
     print_step "Downloading Moodle..."
     echo "  📦 Version: $MOODLE_VERSION"
     echo "  📁 Target: $MOODLE_DIR/html"
@@ -587,7 +705,7 @@ if ! is_complete "STEP_MOODLE_DOWNLOAD"; then
     
     # Verify download
     if [ -f "$MOODLE_DIR/html/version.php" ]; then
-        mark_complete "STEP_MOODLE_DOWNLOAD"
+        # Moodle downloaded
         print_status "✓ Moodle downloaded and verified"
         echo "  📄 Version file: $MOODLE_DIR/html/version.php"
         echo "  📊 Directory size: $(du -sh $MOODLE_DIR/html 2>/dev/null | cut -f1)"
@@ -602,7 +720,7 @@ else
 fi
 
 # Step 4.3: Configure DDEV
-if ! is_complete "STEP_MOODLE_DDEV"; then
+if ! check_moodle_ddev_configured; then
     print_step "Configuring DDEV for Moodle..."
     echo "  📁 Config directory: $MOODLE_DIR/.ddev/"
     
@@ -689,7 +807,7 @@ MYSQLEOF
     
     # Verify configuration
     if [ -f "$MOODLE_DIR/.ddev/config.yaml" ]; then
-        mark_complete "STEP_MOODLE_DDEV"
+        # Moodle DDEV configured
         print_status "✓ DDEV configured for Moodle with MySQL settings"
         echo "  📋 Configuration files:"
         echo "     - $MOODLE_DIR/.ddev/config.yaml"
@@ -705,7 +823,7 @@ else
 fi
 
 # Step 4.4: Start DDEV
-if ! is_complete "STEP_MOODLE_START"; then
+if ! check_moodle_ddev_running; then
     print_step "Starting Moodle DDEV..."
     
     # Check if already running
@@ -731,11 +849,11 @@ if ! is_complete "STEP_MOODLE_START"; then
         print_status "innodb_file_format: $FILE_FORMAT"
         
         if [ "$LARGE_PREFIX" = "ON" ] || [ "$LARGE_PREFIX" = "1" ]; then
-            mark_complete "STEP_MOODLE_START"
+            # Moodle DDEV running
             print_status "✓ Moodle DDEV started with MySQL configured"
         else
             print_warning "MySQL settings may not be fully applied, but continuing..."
-            mark_complete "STEP_MOODLE_START"
+            # Moodle DDEV running
         fi
     else
         print_error "Failed to start DDEV"
@@ -752,7 +870,7 @@ else
 fi
 
 # Step 4.5: Create data directory
-if ! is_complete "STEP_MOODLE_DATA"; then
+if ! check_moodle_data_exists; then
     print_step "Creating Moodle data directory..."
     
     if [ ! -d "$MOODLE_DIR/moodledata" ]; then
@@ -765,7 +883,7 @@ if ! is_complete "STEP_MOODLE_DATA"; then
     
     # Verify directory
     if [ -d "$MOODLE_DIR/moodledata" ] && [ -w "$MOODLE_DIR/moodledata" ]; then
-        mark_complete "STEP_MOODLE_DATA"
+        # Moodle data directory created
         print_status "✓ Moodle data directory configured"
     else
         print_error "Failed to create moodledata directory"
@@ -776,7 +894,7 @@ else
 fi
 
 # Step 4.6: Install Moodle
-if ! is_complete "STEP_MOODLE_INSTALL"; then
+if ! check_moodle_installed; then
     print_step "Installing Moodle via CLI..."
     
     # Check if already installed
@@ -786,7 +904,7 @@ if ! is_complete "STEP_MOODLE_INSTALL"; then
         # Try to check Moodle status
         if su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev exec php html/admin/cli/maintenance.php --help >/dev/null 2>&1"; then
             print_status "Moodle appears to be installed"
-            mark_complete "STEP_MOODLE_INSTALL"
+            # Moodle installation complete
             print_status "✓ Moodle installation verified"
         else
             print_warning "config.php exists but Moodle may not be fully installed. Attempting install..."
@@ -796,7 +914,7 @@ if ! is_complete "STEP_MOODLE_INSTALL"; then
     fi
     
     # If not already marked complete, proceed with installation
-    if ! is_complete "STEP_MOODLE_INSTALL"; then
+    if ! check_moodle_installed; then
         # Get database credentials from DDEV
         DB_HOST="db"
         DB_NAME="db"
@@ -866,7 +984,7 @@ if ! is_complete "STEP_MOODLE_INSTALL"; then
         
         # Final verification
         if [ -f "$MOODLE_DIR/html/config.php" ]; then
-            mark_complete "STEP_MOODLE_INSTALL"
+            # Moodle installation complete
             print_status "✓ Moodle installation verified"
         else
             print_error "Moodle installation failed - config.php not created"
@@ -884,7 +1002,7 @@ fi
 print_section "PART 5: OAuth Modules Installation"
 
 # Step 5.1: Install Simple OAuth
-if ! is_complete "STEP_OAUTH_SIMPLE_OAUTH"; then
+if ! check_simple_oauth_installed; then
     print_step "Installing Simple OAuth module..."
     
     # Check if already installed
@@ -904,7 +1022,7 @@ if ! is_complete "STEP_OAUTH_SIMPLE_OAUTH"; then
     
     # Verify installation
     if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled | grep -q simple_oauth"; then
-        mark_complete "STEP_OAUTH_SIMPLE_OAUTH"
+        # Simple OAuth installed
         print_status "✓ Simple OAuth module installed and verified"
     else
         print_error "Failed to install Simple OAuth module"
@@ -915,7 +1033,7 @@ else
 fi
 
 # Step 5.2: Generate OAuth keys
-if ! is_complete "STEP_OAUTH_KEYS"; then
+if ! check_oauth_keys_exist; then
     print_step "Generating OAuth keys..."
     
     OAUTH_KEYS_DIR="$OPENSOCIAL_DIR/keys"
@@ -954,7 +1072,7 @@ if ! is_complete "STEP_OAUTH_KEYS"; then
     # Verify keys exist and are valid
     if [ -f "$OAUTH_KEYS_DIR/private.key" ] && [ -f "$OAUTH_KEYS_DIR/public.key" ] && \
        openssl rsa -in "$OAUTH_KEYS_DIR/private.key" -check -noout >/dev/null 2>&1; then
-        mark_complete "STEP_OAUTH_KEYS"
+        # OAuth keys generated
         print_status "✓ OAuth keys generated and verified"
         echo "  📊 Key details:"
         echo "     🔑 Private: $OAUTH_KEYS_DIR/private.key (2048 bit RSA)"
@@ -976,7 +1094,7 @@ else
 fi
 
 # Step 5.3: Configure Simple OAuth
-if ! is_complete "STEP_OAUTH_CONFIG"; then
+if ! check_oauth_configured; then
     print_step "Configuring Simple OAuth..."
     
     # Check current configuration
@@ -1000,7 +1118,7 @@ if ! is_complete "STEP_OAUTH_CONFIG"; then
     # Verify configuration
     VERIFY_PUBLIC=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:get simple_oauth.settings public_key --format=string" 2>/dev/null)
     if [ "$VERIFY_PUBLIC" = "$EXPECTED_PUBLIC" ]; then
-        mark_complete "STEP_OAUTH_CONFIG"
+        # OAuth configured
         print_status "✓ Simple OAuth configured and verified"
     else
         print_error "Failed to configure Simple OAuth"
@@ -1016,7 +1134,7 @@ fi
 
 print_section "PART 6: OpenSocial OAuth Provider Module"
 
-if ! is_complete "STEP_OAUTH_PROVIDER_MODULE"; then
+if ! check_oauth_provider_module_exists; then
     print_step "Creating OpenSocial OAuth Provider module..."
     
     MODULE_DIR="$OPENSOCIAL_DIR/html/modules/custom/opensocial_oauth_provider"
@@ -1267,7 +1385,7 @@ EOF
        [ -f "$MODULE_DIR/opensocial_oauth_provider.routing.yml" ] && \
        [ -f "$MODULE_DIR/src/Controller/UserInfoController.php" ] && \
        [ -f "$MODULE_DIR/src/Form/SettingsForm.php" ]; then
-        mark_complete "STEP_OAUTH_PROVIDER_MODULE"
+        # OAuth provider module created
         print_status "✓ OpenSocial OAuth Provider module created and verified"
         echo "  📦 Module files created:"
         echo "     📄 $MODULE_DIR/opensocial_oauth_provider.info.yml"
@@ -1290,7 +1408,7 @@ else
     echo "  📁 Location: $MODULE_DIR"
 fi
 
-if ! is_complete "STEP_ENABLE_OAUTH_PROVIDER"; then
+if ! check_oauth_provider_enabled; then
     print_step "Enabling OpenSocial OAuth Provider module..."
     
     # Check if module is already enabled
@@ -1306,7 +1424,7 @@ if ! is_complete "STEP_ENABLE_OAUTH_PROVIDER"; then
     
     # Verify module is enabled
     if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled | grep -q opensocial_oauth_provider"; then
-        mark_complete "STEP_ENABLE_OAUTH_PROVIDER"
+        # OAuth provider module enabled
         print_status "✓ OAuth Provider module enabled and verified"
     else
         print_error "Failed to enable OAuth Provider module"
@@ -1316,7 +1434,7 @@ else
     print_status "✓ OAuth Provider module already enabled (skipping)"
 fi
 
-if ! is_complete "STEP_CREATE_OAUTH_CLIENT"; then
+if ! check_oauth_client_exists; then
     print_step "Creating OAuth client for Moodle..."
     
     # Check if client already exists
@@ -1363,7 +1481,7 @@ echo 'FAILED';
 \"")
     
     if [ "$CLIENT_CHECK" = "VERIFIED" ]; then
-        mark_complete "STEP_CREATE_OAUTH_CLIENT"
+        # OAuth client created
         print_status "✓ OAuth client created and verified"
     else
         print_error "Failed to create or verify OAuth client"
@@ -1379,7 +1497,7 @@ fi
 
 print_section "PART 7: Moodle OAuth Authentication Plugin"
 
-if ! is_complete "STEP_MOODLE_OAUTH_PLUGIN"; then
+if ! check_moodle_oauth_plugin_exists; then
     print_step "Creating Moodle OpenSocial OAuth plugin..."
     
     MOODLE_AUTH_DIR="$MOODLE_DIR/html/auth/opensocial"
@@ -1590,7 +1708,7 @@ LANGEOF
     
     # Verify plugin was created
     if [ -f "$MOODLE_AUTH_DIR/version.php" ] && [ -f "$MOODLE_AUTH_DIR/auth.php" ]; then
-        mark_complete "STEP_MOODLE_OAUTH_PLUGIN"
+        # Moodle OAuth plugin created
         print_status "✓ Moodle OAuth plugin created and verified"
         echo "  📦 Plugin files created:"
         echo "     📄 $MOODLE_AUTH_DIR/version.php"
@@ -1746,7 +1864,7 @@ IMPORTANT NOTES:
 - DDEV automatically manages routing
 - All files stored in: $SCRIPT_DIR
 
-Checkpoint File: $CHECKPOINT_FILE
+Credentials File: $CREDENTIALS_FILE
 ========================================
 EOF
 
@@ -1783,7 +1901,6 @@ echo ""
 print_status "Storage Location:"
 echo "  All files stored in: $SCRIPT_DIR"
 echo "  Credentials file: $CREDENTIALS_FILE"
-echo "  Checkpoint file: $CHECKPOINT_FILE"
 echo ""
 
 print_warning "IMPORTANT: Complete OAuth Configuration in Moodle"
