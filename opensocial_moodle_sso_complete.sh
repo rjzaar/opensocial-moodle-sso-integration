@@ -79,7 +79,8 @@ check_url_available() {
     while su - $ACTUAL_USER -c "ddev list 2>/dev/null | grep -q \"$test_name\""; do
         counter=$((counter + 1))
         test_name="${project_name}${counter}"
-        print_status "URL conflict detected, trying: $test_name"
+        # Output to stderr so it doesn't interfere with command substitution
+        >&2 echo -e "${GREEN}[INFO]${NC} URL conflict detected, trying: $test_name"
     done
     
     echo "$test_name"
