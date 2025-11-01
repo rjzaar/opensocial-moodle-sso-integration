@@ -1,0 +1,79 @@
+<!-- OpenSocial OAuth2 Authentication Plugin Settings -->
+<div class="auth_opensocial_settings">
+    <h3><?php echo get_string('setup_instructions', 'auth_opensocial'); ?></h3>
+    
+    <div class="alert alert-info">
+        <h4><?php echo get_string('setup_step1', 'auth_opensocial'); ?></h4>
+        <p><?php echo get_string('setup_step1_desc', 'auth_opensocial'); ?></p>
+        
+        <h4><?php echo get_string('setup_step2', 'auth_opensocial'); ?></h4>
+        <p><?php echo get_string('setup_step2_desc', 'auth_opensocial'); ?></p>
+        <?php if (!empty($config->opensocial_url)): ?>
+        <ul>
+            <li><?php echo get_string('authorization_endpoint', 'auth_opensocial', $config->opensocial_url); ?></li>
+            <li><?php echo get_string('token_endpoint', 'auth_opensocial', $config->opensocial_url); ?></li>
+            <li><?php echo get_string('userinfo_endpoint', 'auth_opensocial', $config->opensocial_url); ?></li>
+        </ul>
+        <?php endif; ?>
+        
+        <h4><?php echo get_string('setup_step3', 'auth_opensocial'); ?></h4>
+        <p><?php echo get_string('setup_step3_desc', 'auth_opensocial'); ?></p>
+        
+        <h4><?php echo get_string('setup_step4', 'auth_opensocial'); ?></h4>
+        <p><?php echo get_string('setup_step4_desc', 'auth_opensocial'); ?></p>
+    </div>
+
+    <table class="generaltable">
+        <tr>
+            <td align="right">
+                <label for="opensocial_url"><?php echo get_string('opensocial_url', 'auth_opensocial'); ?>:</label>
+            </td>
+            <td>
+                <input type="text" 
+                       name="opensocial_url" 
+                       id="opensocial_url" 
+                       size="50" 
+                       value="<?php echo htmlspecialchars($config->opensocial_url ?? ''); ?>" />
+                <div class="form-description">
+                    <?php echo get_string('opensocial_url_desc', 'auth_opensocial'); ?>
+                </div>
+            </td>
+        </tr>
+        
+        <tr>
+            <td align="right">
+                <label for="issuerid"><?php echo get_string('issuerid', 'auth_opensocial'); ?>:</label>
+            </td>
+            <td>
+                <input type="number" 
+                       name="issuerid" 
+                       id="issuerid" 
+                       size="10" 
+                       value="<?php echo (int)($config->issuerid ?? 0); ?>" />
+                <div class="form-description">
+                    <?php echo get_string('issuerid_desc', 'auth_opensocial'); ?>
+                    <br/>
+                    <a href="<?php echo $CFG->wwwroot; ?>/admin/tool/oauth2/issuers.php" target="_blank">
+                        Configure OAuth2 services
+                    </a>
+                </div>
+            </td>
+        </tr>
+        
+        <tr>
+            <td align="right">
+                <label for="autoredirect"><?php echo get_string('autoredirect', 'auth_opensocial'); ?>:</label>
+            </td>
+            <td>
+                <input type="checkbox" 
+                       name="autoredirect" 
+                       id="autoredirect" 
+                       value="1" 
+                       <?php echo (!empty($config->autoredirect)) ? 'checked="checked"' : ''; ?> />
+                <div class="form-description">
+                    <?php echo get_string('autoredirect_desc', 'auth_opensocial'); ?>
+                </div>
+            </td>
+        </tr>
+    </table>
+</div>

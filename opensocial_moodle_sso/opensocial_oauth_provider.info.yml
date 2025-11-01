@@ -1,0 +1,9 @@
+name: 'OpenSocial OAuth Provider'
+type: module
+description: 'Provides OAuth2 authentication for Moodle integration'
+core_version_requirement: ^9 || ^10
+package: 'OpenSocial'
+
+dependencies:
+  - drupal:user
+  - simple_oauth:simple_oauth

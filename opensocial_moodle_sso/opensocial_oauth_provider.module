@@ -1,0 +1,25 @@
+<?php
+
+/**
+ * @file
+ * OpenSocial OAuth Provider module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function opensocial_oauth_provider_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.opensocial_oauth_provider':
+      return '<p>' . t('Provides OAuth2 authentication endpoints for Moodle integration.') . '</p>';
+  }
+}
+
+/**
+ * Implements hook_install().
+ */
+function opensocial_oauth_provider_install() {
+  \Drupal::messenger()->addStatus(t('OpenSocial OAuth Provider installed successfully. Configure OAuth2 clients in Simple OAuth settings.'));
+}

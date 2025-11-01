@@ -1,0 +1,15 @@
+opensocial_oauth_provider.user_info:
+  path: '/oauth/userinfo'
+  defaults:
+    _controller: '\Drupal\opensocial_oauth_provider\Controller\UserInfoController::userInfo'
+  requirements:
+    _permission: 'access content'
+  methods: [GET]
+
+opensocial_oauth_provider.settings:
+  path: '/admin/config/opensocial/oauth-provider'
+  defaults:
+    _form: '\Drupal\opensocial_oauth_provider\Form\SettingsForm'
+    _title: 'OpenSocial OAuth Provider Settings'
+  requirements:
+    _permission: 'administer site configuration'
