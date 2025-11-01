@@ -479,7 +479,7 @@ if ! is_complete "STEP_OPENSOCIAL_INSTALL"; then
                 su - $ACTUAL_USER -c "chmod 666 $SETTINGS_DIR/settings.php" 2>/dev/null || true
                 
                 # Add private file path if not already present
-                if ! grep -q "file_private_path" "$SETTINGS_DIR/settings.php"; then
+                if ! grep -q "\$settings\['file_private_path'\] = '\.\./private';" "$SETTINGS_DIR/settings.php"; then
                     print_status "Adding private file path configuration..."
                     echo "  📝 Editing: $SETTINGS_DIR/settings.php"
                     cat >> "$SETTINGS_DIR/settings.php" <<'EOF'

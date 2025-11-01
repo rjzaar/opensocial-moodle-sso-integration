@@ -1,0 +1,6 @@
+# OpenSocial custom configuration
+webimage_extra_packages: [php8.2-gd, php8.2-uploadprogress]
+php_memory_limit: 512M
+hooks:
+  post-start:
+    - exec: composer install --no-interaction || true
