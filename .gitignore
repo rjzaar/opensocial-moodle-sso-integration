@@ -1,4 +1,10 @@
 **/opensocial_moodle_ddev_install.checkpoint
-**/opensocial/
-**/opensocial1/
+
+# Ignore directories named opensocial, opensocial1, opensocial2, etc.
+opensocial*/
+
+# But allow files that start with opensocial_
+!opensocial_*
+
+moodle*/
 

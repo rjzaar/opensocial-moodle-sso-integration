@@ -1003,20 +1003,41 @@ print_section "PART 5: OAuth Modules Installation"
 
 # Step 5.1: Install Simple OAuth
 if ! check_simple_oauth_installed; then
-    print_step "Installing Simple OAuth module..."
+    print_step "Checking if Simple OAuth module is installed..."
     
-    # Check if already installed
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled | grep -q simple_oauth"; then
-        print_status "Simple OAuth already installed and enabled"
+    # Check if already enabled
+    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q simple_oauth"; then
+        print_status "✓ Simple OAuth already installed and enabled (skipping)"
     else
-        # Check if package exists in composer.json
-        if ! grep -q "drupal/simple_oauth" "$OPENSOCIAL_DIR/composer.json" 2>/dev/null; then
-            su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require 'drupal/simple_oauth:^5.2'"
-        fi
-        
-        # Enable the module
-        if ! su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled | grep -q simple_oauth"; then
+        # Check if module exists but is not enabled
+        if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module 2>/dev/null | grep -q simple_oauth"; then
+            print_status "Simple OAuth module found but not enabled - enabling..."
             su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush en simple_oauth -y"
+            print_status "✓ Simple OAuth enabled"
+        else
+            # Module not found, need to install it
+            print_status "Simple OAuth not found - installing via Composer..."
+            
+            # Check if it's already in composer.json (might be included by OpenSocial)
+            if grep -q "drupal/simple_oauth" "$OPENSOCIAL_DIR/composer.json" 2>/dev/null; then
+                print_status "Simple OAuth is in composer.json, running composer install..."
+                su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer install"
+            else
+                # Add it - use version ^6.0 to match OpenSocial's graphql_oauth dependency
+                print_status "Adding Simple OAuth ^6.0 to match OpenSocial dependencies..."
+                if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require 'drupal/simple_oauth:^6.0' --with-all-dependencies"; then
+                    print_status "✓ Simple OAuth installed via Composer"
+                else
+                    print_error "Failed to install Simple OAuth"
+                    print_error "OpenSocial may require Simple OAuth 6.x (check composer.json dependencies)"
+                    exit 1
+                fi
+            fi
+            
+            # Enable the module after installation
+            print_status "Enabling Simple OAuth module..."
+            su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush en simple_oauth -y"
+            print_status "✓ Simple OAuth enabled"
         fi
     fi
     
