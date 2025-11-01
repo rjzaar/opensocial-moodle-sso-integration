@@ -1,13 +1,9 @@
 #!/bin/bash
 
 ################################################################################
-# OpenSocial + Moodle Fully Integrated SSO Installation Script
+# OpenSocial + Moodle Fully Integrated SSO Installation Script (DDEV Version)
+# Both platforms installed in DDEV to avoid port conflicts
 # Based on: https://github.com/rjzaar/opensocial-moodle-sso-integration
-# 
-# This script performs a complete installation of:
-# 1. OpenSocial (Drupal) with OAuth Provider module
-# 2. Moodle LMS with OpenSocial OAuth authentication plugin
-# 3. Full SSO configuration between both platforms
 ################################################################################
 
 set -e  # Exit on any error
@@ -61,13 +57,13 @@ check_root
 ACTUAL_USER="${SUDO_USER:-$USER}"
 ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
 
-print_section "Integrated OpenSocial + Moodle SSO Installation"
-echo "This script will install and configure:"
-echo "  1. OpenSocial (Drupal) via DDEV"
-echo "  2. OpenSocial OAuth Provider module"
-echo "  3. Moodle LMS via Nginx"
-echo "  4. Moodle OpenSocial OAuth authentication plugin"
-echo "  5. Complete SSO integration with automatic user provisioning"
+print_section "Integrated OpenSocial + Moodle SSO Installation (DDEV)"
+echo "This script will install both platforms in DDEV:"
+echo "  1. OpenSocial (Drupal) - https://opensocial.ddev.site"
+echo "  2. Moodle LMS - https://moodle.ddev.site"
+echo "  3. Complete SSO integration between them"
+echo ""
+print_warning "Both systems run in DDEV containers (no port conflicts!)"
 echo ""
 
 # Configuration variables
@@ -81,17 +77,10 @@ OPENSOCIAL_MYSQL_VERSION="8.0"
 OPENSOCIAL_NODEJS_VERSION="18"
 
 # Moodle Configuration
-MOODLE_VERSION="${MOODLE_VERSION:-MOODLE_404_STABLE}"
-MOODLE_DIR="/var/www/moodle"
-MOODLE_DATA="/var/moodledata"
-MOODLE_DB_NAME="moodle"
-MOODLE_DB_USER="moodleuser"
-MOODLE_DB_PASS=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
-MYSQL_ROOT_PASS=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
-
-# Domain Configuration
-read -p "Enter domain for Moodle (e.g., moodle.example.com or moodle.localhost): " MOODLE_DOMAIN
-MOODLE_DOMAIN="${MOODLE_DOMAIN:-moodle.localhost}"
+MOODLE_PROJECT="${MOODLE_PROJECT:-moodle}"
+MOODLE_PHP_VERSION="8.1"
+MOODLE_MYSQL_VERSION="8.0"
+MOODLE_VERSION="MOODLE_404_STABLE"
 
 read -p "Enter admin email: " ADMIN_EMAIL
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
@@ -100,28 +89,25 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 OAUTH_CLIENT_ID=$(cat /proc/sys/kernel/random/uuid)
 OAUTH_CLIENT_SECRET=$(openssl rand -hex 32)
 
-# OpenSocial site config
+# Site configurations
 OPENSOCIAL_SITE_NAME="OpenSocial Community"
 OPENSOCIAL_ADMIN_USER="admin"
 OPENSOCIAL_ADMIN_PASS="Admin@123"
 OPENSOCIAL_URL="https://${OPENSOCIAL_PROJECT}.ddev.site"
 
-# Moodle admin config
 MOODLE_ADMIN_USER="admin"
 MOODLE_ADMIN_PASS="Admin@123"
+MOODLE_URL="https://${MOODLE_PROJECT}.ddev.site"
 
 print_status "Configuration set:"
-echo "  OpenSocial Project: $OPENSOCIAL_PROJECT"
 echo "  OpenSocial URL: $OPENSOCIAL_URL"
-echo "  OpenSocial Version: $OPENSOCIAL_VERSION"
-echo "  Moodle Domain: $MOODLE_DOMAIN"
-echo "  Moodle Directory: $MOODLE_DIR"
+echo "  Moodle URL: $MOODLE_URL"
 echo "  Admin Email: $ADMIN_EMAIL"
 echo ""
 
 # Checkpoint and credentials files
-CHECKPOINT_FILE="/var/log/opensocial_moodle_sso_install.checkpoint"
-CREDENTIALS_FILE="/root/opensocial_moodle_sso_credentials.txt"
+CHECKPOINT_FILE="/var/log/opensocial_moodle_ddev_install.checkpoint"
+CREDENTIALS_FILE="/root/opensocial_moodle_ddev_credentials.txt"
 
 # Initialize checkpoint
 if [ ! -f "$CHECKPOINT_FILE" ]; then
@@ -165,8 +151,6 @@ if ! is_complete "STEP_PREREQUISITES"; then
         "apt-transport-https"
         "software-properties-common"
         "git"
-        "certbot"
-        "python3-certbot-nginx"
         "unzip"
         "wget"
     )
@@ -245,253 +229,10 @@ else
 fi
 
 ################################################################################
-# PART 3: MOODLE PREREQUISITES
+# PART 3: OPENSOCIAL INSTALLATION
 ################################################################################
 
-print_section "PART 3: Moodle Prerequisites"
-
-if ! is_complete "STEP_MOODLE_PACKAGES"; then
-    print_step "Installing Moodle packages..."
-    
-    apt install -y nginx mariadb-server php-fpm php-mysql php-xml php-xmlrpc \
-        php-curl php-gd php-imagick php-cli php-dev php-imap php-mbstring \
-        php-opcache php-soap php-zip php-intl php-ldap php-json
-    
-    PHP_VERSION=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
-    print_status "✓ Detected PHP version: $PHP_VERSION"
-    
-    mark_complete "STEP_MOODLE_PACKAGES"
-    print_status "✓ Moodle packages installed"
-else
-    print_status "✓ Moodle packages already installed (skipping)"
-    PHP_VERSION=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
-fi
-
-if ! is_complete "STEP_PHP_CONFIG"; then
-    print_step "Configuring PHP for Moodle..."
-    
-    PHP_INI="/etc/php/$PHP_VERSION/fpm/php.ini"
-    cp "$PHP_INI" "$PHP_INI.backup"
-    
-    sed -i 's/upload_max_filesize = .*/upload_max_filesize = 256M/' $PHP_INI
-    sed -i 's/post_max_size = .*/post_max_size = 256M/' $PHP_INI
-    sed -i 's/memory_limit = .*/memory_limit = 512M/' $PHP_INI
-    sed -i 's/max_execution_time = .*/max_execution_time = 300/' $PHP_INI
-    sed -i 's/max_input_time = .*/max_input_time = 300/' $PHP_INI
-    sed -i 's/;max_input_vars = .*/max_input_vars = 5000/' $PHP_INI
-    
-    mark_complete "STEP_PHP_CONFIG"
-    print_status "✓ PHP configured"
-else
-    print_status "✓ PHP already configured (skipping)"
-fi
-
-################################################################################
-# PART 4: MARIADB CONFIGURATION
-################################################################################
-
-print_section "PART 4: MariaDB Configuration"
-
-if ! is_complete "STEP_MARIADB"; then
-    print_step "Starting and securing MariaDB..."
-    
-    systemctl start mariadb
-    systemctl enable mariadb
-    
-    # Secure MariaDB
-    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS';" 2>/dev/null || true
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
-    
-    mark_complete "STEP_MARIADB"
-    print_status "✓ MariaDB configured and secured"
-else
-    print_status "✓ MariaDB already configured (skipping)"
-fi
-
-if ! is_complete "STEP_MOODLE_DATABASE"; then
-    print_step "Creating Moodle database..."
-    
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "CREATE DATABASE IF NOT EXISTS $MOODLE_DB_NAME DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "CREATE USER IF NOT EXISTS '$MOODLE_DB_USER'@'localhost' IDENTIFIED BY '$MOODLE_DB_PASS';"
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "GRANT ALL PRIVILEGES ON $MOODLE_DB_NAME.* TO '$MOODLE_DB_USER'@'localhost';"
-    mysql -uroot -p"$MYSQL_ROOT_PASS" -e "FLUSH PRIVILEGES;"
-    
-    mark_complete "STEP_MOODLE_DATABASE"
-    print_status "✓ Moodle database created"
-else
-    print_status "✓ Moodle database already created (skipping)"
-fi
-
-################################################################################
-# PART 5: MOODLE INSTALLATION
-################################################################################
-
-print_section "PART 5: Moodle Installation"
-
-if ! is_complete "STEP_MOODLE_DOWNLOAD"; then
-    print_step "Downloading Moodle..."
-    
-    cd /var/www
-    if [ -d "moodle" ]; then
-        mv moodle "moodle.backup.$(date +%Y%m%d_%H%M%S)"
-    fi
-    
-    git clone -b $MOODLE_VERSION git://git.moodle.org/moodle.git
-    
-    mark_complete "STEP_MOODLE_DOWNLOAD"
-    print_status "✓ Moodle downloaded"
-else
-    print_status "✓ Moodle already downloaded (skipping)"
-fi
-
-if ! is_complete "STEP_MOODLE_DATA"; then
-    print_step "Creating Moodle data directory..."
-    
-    mkdir -p $MOODLE_DATA
-    chmod 770 $MOODLE_DATA
-    chown -R www-data:www-data $MOODLE_DATA
-    chown -R www-data:www-data $MOODLE_DIR
-    
-    mark_complete "STEP_MOODLE_DATA"
-    print_status "✓ Moodle data directory created"
-else
-    print_status "✓ Moodle data directory already created (skipping)"
-fi
-
-if ! is_complete "STEP_MOODLE_NGINX"; then
-    print_step "Configuring Nginx for Moodle..."
-    
-    cat > /etc/nginx/sites-available/moodle <<EOF
-server {
-    listen 80;
-    server_name $MOODLE_DOMAIN;
-    root $MOODLE_DIR;
-    index index.php index.html index.htm;
-
-    client_max_body_size 256M;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-
-    location ~ [^/]\.php(/|\$) {
-        fastcgi_split_path_info ^(.+\.php)(/.+)\$;
-        fastcgi_index index.php;
-        fastcgi_pass unix:/var/run/php/php$PHP_VERSION-fpm.sock;
-        include fastcgi_params;
-        fastcgi_param PATH_INFO \$fastcgi_path_info;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        fastcgi_buffer_size 128k;
-        fastcgi_buffers 256 16k;
-        fastcgi_busy_buffers_size 256k;
-        fastcgi_temp_file_write_size 256k;
-        fastcgi_read_timeout 300;
-    }
-
-    location /dataroot/ {
-        internal;
-        alias $MOODLE_DATA/;
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EOF
-    
-    ln -sf /etc/nginx/sites-available/moodle /etc/nginx/sites-enabled/
-    rm -f /etc/nginx/sites-enabled/default
-    
-    nginx -t
-    systemctl restart nginx
-    systemctl restart php${PHP_VERSION}-fpm
-    
-    mark_complete "STEP_MOODLE_NGINX"
-    print_status "✓ Nginx configured for Moodle"
-else
-    print_status "✓ Nginx already configured (skipping)"
-fi
-
-if ! is_complete "STEP_MOODLE_CONFIG"; then
-    print_step "Creating Moodle configuration..."
-    
-    cat > $MOODLE_DIR/config.php <<EOF
-<?php  // Moodle configuration file
-
-unset(\$CFG);
-global \$CFG;
-\$CFG = new stdClass();
-
-\$CFG->dbtype    = 'mariadb';
-\$CFG->dblibrary = 'native';
-\$CFG->dbhost    = 'localhost';
-\$CFG->dbname    = '$MOODLE_DB_NAME';
-\$CFG->dbuser    = '$MOODLE_DB_USER';
-\$CFG->dbpass    = '$MOODLE_DB_PASS';
-\$CFG->prefix    = 'mdl_';
-\$CFG->dboptions = array (
-  'dbpersist' => 0,
-  'dbport' => '',
-  'dbsocket' => '',
-  'dbcollation' => 'utf8mb4_unicode_ci',
-);
-
-\$CFG->wwwroot   = 'http://$MOODLE_DOMAIN';
-\$CFG->dataroot  = '$MOODLE_DATA';
-\$CFG->admin     = 'admin';
-
-\$CFG->directorypermissions = 0770;
-
-require_once(__DIR__ . '/lib/setup.php');
-
-// There is no php closing tag in this file,
-// it is intentional because it prevents trailing whitespace problems!
-EOF
-    
-    chown www-data:www-data $MOODLE_DIR/config.php
-    chmod 640 $MOODLE_DIR/config.php
-    
-    mark_complete "STEP_MOODLE_CONFIG"
-    print_status "✓ Moodle configuration created"
-else
-    print_status "✓ Moodle configuration already exists (skipping)"
-fi
-
-if ! is_complete "STEP_MOODLE_INSTALL"; then
-    print_step "Installing Moodle via CLI..."
-    
-    # Run Moodle CLI installation
-    sudo -u www-data php $MOODLE_DIR/admin/cli/install.php \
-        --lang=en \
-        --wwwroot="http://$MOODLE_DOMAIN" \
-        --dataroot="$MOODLE_DATA" \
-        --dbtype=mariadb \
-        --dbhost=localhost \
-        --dbname="$MOODLE_DB_NAME" \
-        --dbuser="$MOODLE_DB_USER" \
-        --dbpass="$MOODLE_DB_PASS" \
-        --fullname="Moodle LMS" \
-        --shortname="Moodle" \
-        --adminuser="$MOODLE_ADMIN_USER" \
-        --adminpass="$MOODLE_ADMIN_PASS" \
-        --adminemail="$ADMIN_EMAIL" \
-        --agree-license \
-        --non-interactive
-    
-    mark_complete "STEP_MOODLE_INSTALL"
-    print_status "✓ Moodle installed via CLI"
-else
-    print_status "✓ Moodle already installed (skipping)"
-fi
-
-################################################################################
-# PART 6: OPENSOCIAL INSTALLATION
-################################################################################
-
-print_section "PART 6: OpenSocial Installation"
+print_section "PART 3: OpenSocial Installation"
 
 OPENSOCIAL_DIR="$ACTUAL_HOME/$OPENSOCIAL_PROJECT"
 
@@ -536,14 +277,14 @@ else
 fi
 
 if ! is_complete "STEP_OPENSOCIAL_START"; then
-    print_step "Starting DDEV..."
+    print_step "Starting OpenSocial DDEV..."
     
     su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev start"
     
     mark_complete "STEP_OPENSOCIAL_START"
-    print_status "✓ DDEV started"
+    print_status "✓ OpenSocial DDEV started"
 else
-    print_status "✓ DDEV already started (skipping)"
+    print_status "✓ OpenSocial DDEV already started (skipping)"
 fi
 
 if ! is_complete "STEP_OPENSOCIAL_COMPOSER"; then
@@ -580,13 +321,13 @@ if ! is_complete "STEP_OPENSOCIAL_INSTALL"; then
     print_step "Installing Drupal/OpenSocial..."
     
     SETTINGS_DIR="$OPENSOCIAL_DIR/html/sites/default"
-    su - $ACTUAL_USER -c "chmod 755 $SETTINGS_DIR"
+    su - $ACTUAL_USER -c "chmod 755 $SETTINGS_DIR" 2>/dev/null || true
     
     if [ -f "$SETTINGS_DIR/default.settings.php" ] && [ ! -f "$SETTINGS_DIR/settings.php" ]; then
         su - $ACTUAL_USER -c "cp $SETTINGS_DIR/default.settings.php $SETTINGS_DIR/settings.php"
     fi
     
-    su - $ACTUAL_USER -c "chmod 666 $SETTINGS_DIR/settings.php"
+    su - $ACTUAL_USER -c "chmod 666 $SETTINGS_DIR/settings.php" 2>/dev/null || true
     
     # Add private file path
     cat >> "$SETTINGS_DIR/settings.php" <<'EOF'
@@ -608,8 +349,8 @@ EOF
         --yes"
     
     # Set proper permissions
-    su - $ACTUAL_USER -c "chmod 444 $SETTINGS_DIR/settings.php"
-    su - $ACTUAL_USER -c "chmod 755 $SETTINGS_DIR"
+    su - $ACTUAL_USER -c "chmod 444 $SETTINGS_DIR/settings.php" 2>/dev/null || true
+    su - $ACTUAL_USER -c "chmod 755 $SETTINGS_DIR" 2>/dev/null || true
     
     mark_complete "STEP_OPENSOCIAL_INSTALL"
     print_status "✓ OpenSocial installed"
@@ -618,10 +359,126 @@ else
 fi
 
 ################################################################################
-# PART 7: OAUTH MODULES INSTALLATION
+# PART 4: MOODLE INSTALLATION IN DDEV
 ################################################################################
 
-print_section "PART 7: OAuth Modules Installation"
+print_section "PART 4: Moodle Installation in DDEV"
+
+MOODLE_DIR="$ACTUAL_HOME/$MOODLE_PROJECT"
+
+if ! is_complete "STEP_MOODLE_DIR"; then
+    print_step "Creating Moodle project directory..."
+    
+    su - $ACTUAL_USER -c "mkdir -p $MOODLE_DIR"
+    
+    mark_complete "STEP_MOODLE_DIR"
+    print_status "✓ Moodle directory created"
+else
+    print_status "✓ Moodle directory already exists (skipping)"
+fi
+
+if ! is_complete "STEP_MOODLE_DOWNLOAD"; then
+    print_step "Downloading Moodle..."
+    
+    su - $ACTUAL_USER -c "cd $MOODLE_DIR && git clone -b $MOODLE_VERSION git://git.moodle.org/moodle.git html"
+    
+    mark_complete "STEP_MOODLE_DOWNLOAD"
+    print_status "✓ Moodle downloaded"
+else
+    print_status "✓ Moodle already downloaded (skipping)"
+fi
+
+if ! is_complete "STEP_MOODLE_DDEV"; then
+    print_step "Configuring DDEV for Moodle..."
+    
+    su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev config --project-type=php \
+        --docroot=html \
+        --php-version=$MOODLE_PHP_VERSION \
+        --database=mysql:$MOODLE_MYSQL_VERSION \
+        --project-name='$MOODLE_PROJECT'"
+    
+    # Create custom DDEV config for Moodle
+    cat > "$MOODLE_DIR/.ddev/config.moodle.yaml" <<EOF
+# Moodle custom configuration
+php_memory_limit: 512M
+upload_dirs:
+  - moodledata
+webimage_extra_packages:
+  - php${MOODLE_PHP_VERSION}-xmlrpc
+  - php${MOODLE_PHP_VERSION}-soap
+  - php${MOODLE_PHP_VERSION}-intl
+  - php${MOODLE_PHP_VERSION}-ldap
+EOF
+    
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$MOODLE_DIR/.ddev"
+    
+    mark_complete "STEP_MOODLE_DDEV"
+    print_status "✓ DDEV configured for Moodle"
+else
+    print_status "✓ DDEV already configured for Moodle (skipping)"
+fi
+
+if ! is_complete "STEP_MOODLE_START"; then
+    print_step "Starting Moodle DDEV..."
+    
+    su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev start"
+    
+    mark_complete "STEP_MOODLE_START"
+    print_status "✓ Moodle DDEV started"
+else
+    print_status "✓ Moodle DDEV already started (skipping)"
+fi
+
+if ! is_complete "STEP_MOODLE_DATA"; then
+    print_step "Creating Moodle data directory..."
+    
+    su - $ACTUAL_USER -c "mkdir -p $MOODLE_DIR/moodledata"
+    su - $ACTUAL_USER -c "chmod 777 $MOODLE_DIR/moodledata"
+    
+    mark_complete "STEP_MOODLE_DATA"
+    print_status "✓ Moodle data directory created"
+else
+    print_status "✓ Moodle data directory already created (skipping)"
+fi
+
+if ! is_complete "STEP_MOODLE_INSTALL"; then
+    print_step "Installing Moodle via CLI..."
+    
+    # Get database credentials from DDEV
+    DB_HOST="db"
+    DB_NAME="db"
+    DB_USER="db"
+    DB_PASS="db"
+    
+    # Run Moodle CLI installation
+    su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev exec php html/admin/cli/install.php \
+        --lang=en \
+        --wwwroot='$MOODLE_URL' \
+        --dataroot='/var/www/html/moodledata' \
+        --dbtype=mariadb \
+        --dbhost='$DB_HOST' \
+        --dbname='$DB_NAME' \
+        --dbuser='$DB_USER' \
+        --dbpass='$DB_PASS' \
+        --fullname='Moodle LMS' \
+        --shortname='Moodle' \
+        --adminuser='$MOODLE_ADMIN_USER' \
+        --adminpass='$MOODLE_ADMIN_PASS' \
+        --adminemail='$ADMIN_EMAIL' \
+        --agree-license \
+        --non-interactive"
+    
+    mark_complete "STEP_MOODLE_INSTALL"
+    print_status "✓ Moodle installed via CLI"
+else
+    print_status "✓ Moodle already installed (skipping)"
+fi
+
+################################################################################
+# PART 5: OAUTH MODULES INSTALLATION
+################################################################################
+
+print_section "PART 5: OAuth Modules Installation"
 
 if ! is_complete "STEP_OAUTH_SIMPLE_OAUTH"; then
     print_step "Installing Simple OAuth module..."
@@ -661,8 +518,6 @@ fi
 if ! is_complete "STEP_OAUTH_CONFIG"; then
     print_step "Configuring Simple OAuth..."
     
-    OAUTH_KEYS_DIR="$OPENSOCIAL_DIR/keys"
-    
     # Configure key paths (use absolute paths inside container)
     su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:set simple_oauth.settings public_key '/var/www/html/../keys/public.key' -y"
     su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:set simple_oauth.settings private_key '/var/www/html/../keys/private.key' -y"
@@ -677,10 +532,10 @@ else
 fi
 
 ################################################################################
-# PART 8: OPENSOCIAL OAUTH PROVIDER MODULE
+# PART 6: OPENSOCIAL OAUTH PROVIDER MODULE
 ################################################################################
 
-print_section "PART 8: OpenSocial OAuth Provider Module"
+print_section "PART 6: OpenSocial OAuth Provider Module"
 
 if ! is_complete "STEP_OAUTH_PROVIDER_MODULE"; then
     print_step "Creating OpenSocial OAuth Provider module..."
@@ -829,7 +684,7 @@ class UserInfoController extends ControllerBase {
     if ($account->hasField('user_picture') && !$account->get('user_picture')->isEmpty()) {
       $file = $account->get('user_picture')->entity;
       if ($file) {
-        $user_data['picture'] = file_create_url($file->getFileUri());
+        $user_data['picture'] = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
       }
     }
 
@@ -937,7 +792,7 @@ if ! is_complete "STEP_CREATE_OAUTH_CLIENT"; then
   'secret' => '$OAUTH_CLIENT_SECRET',
   'confidential' => TRUE,
   'third_party' => TRUE,
-  'redirect' => 'http://$MOODLE_DOMAIN/admin/oauth2callback.php',
+  'redirect' => '$MOODLE_URL/admin/oauth2callback.php',
   'user_id' => NULL,
 ]);
 \\$client->save();
@@ -951,15 +806,15 @@ else
 fi
 
 ################################################################################
-# PART 9: MOODLE OAUTH PLUGIN INSTALLATION
+# PART 7: MOODLE OAUTH PLUGIN INSTALLATION
 ################################################################################
 
-print_section "PART 9: Moodle OAuth Authentication Plugin"
+print_section "PART 7: Moodle OAuth Authentication Plugin"
 
 if ! is_complete "STEP_MOODLE_OAUTH_PLUGIN"; then
     print_step "Creating Moodle OpenSocial OAuth plugin..."
     
-    MOODLE_AUTH_DIR="$MOODLE_DIR/auth/opensocial"
+    MOODLE_AUTH_DIR="$MOODLE_DIR/html/auth/opensocial"
     mkdir -p "$MOODLE_AUTH_DIR/lang/en"
     mkdir -p "$MOODLE_AUTH_DIR/db"
     
@@ -1133,14 +988,14 @@ $string['pluginname'] = 'OpenSocial OAuth2';
 $string['auth_opensocialdescription'] = 'OpenSocial OAuth2 authentication';
 $string['auth_opensocialsettings'] = 'OpenSocial OAuth2 Settings';
 $string['opensocial_url'] = 'OpenSocial URL';
-$string['opensocial_url_desc'] = 'The base URL of your OpenSocial installation (e.g., https://opensocial.example.com)';
+$string['opensocial_url_desc'] = 'The base URL of your OpenSocial installation (e.g., https://opensocial.ddev.site)';
 $string['oauth2_issuer_id'] = 'OAuth2 Issuer ID';
 $string['oauth2_issuer_id_desc'] = 'The ID of the OAuth2 issuer configured in Moodle';
 $string['auto_redirect'] = 'Auto-redirect to OpenSocial login';
 $string['auto_redirect_desc'] = 'Automatically redirect users to OpenSocial login page';
 LANGEOF
     
-    chown -R www-data:www-data "$MOODLE_AUTH_DIR"
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$MOODLE_AUTH_DIR"
     
     mark_complete "STEP_MOODLE_OAUTH_PLUGIN"
     print_status "✓ Moodle OAuth plugin created"
@@ -1149,47 +1004,15 @@ else
 fi
 
 ################################################################################
-# PART 10: MOODLE OAUTH CONFIGURATION
+# PART 8: SAVE CREDENTIALS
 ################################################################################
 
-print_section "PART 10: Configuring OAuth in Moodle"
-
-if ! is_complete "STEP_MOODLE_OAUTH_SERVICE"; then
-    print_step "Configuring OAuth2 service in Moodle..."
-    
-    # Create OAuth2 issuer via Moodle CLI
-    sudo -u www-data php $MOODLE_DIR/admin/cli/cfg.php \
-        --name=auth_oauth2_issuer \
-        --set="OpenSocial"
-    
-    print_warning "OAuth2 service must be configured via web interface"
-    print_status "Please complete the following steps in Moodle admin:"
-    echo "  1. Go to: Site administration > Server > OAuth 2 services"
-    echo "  2. Click 'Create new custom service'"
-    echo "  3. Use these settings:"
-    echo "     Name: OpenSocial"
-    echo "     Client ID: $OAUTH_CLIENT_ID"
-    echo "     Client secret: $OAUTH_CLIENT_SECRET"
-    echo "     Service base URL: $OPENSOCIAL_URL"
-    echo "     Authorization endpoint: $OPENSOCIAL_URL/oauth/authorize"
-    echo "     Token endpoint: $OPENSOCIAL_URL/oauth/token"
-    echo "     User info endpoint: $OPENSOCIAL_URL/oauth/userinfo"
-    
-    mark_complete "STEP_MOODLE_OAUTH_SERVICE"
-else
-    print_status "✓ OAuth service configuration marked (skipping)"
-fi
-
-################################################################################
-# PART 11: SAVE CREDENTIALS
-################################################################################
-
-print_section "PART 11: Saving Installation Information"
+print_section "PART 8: Saving Installation Information"
 
 cat > "$CREDENTIALS_FILE" <<EOF
 ========================================
 OpenSocial + Moodle SSO Integration
-Complete Installation Credentials
+Complete Installation (DDEV)
 ========================================
 Installation Date: $(date)
 
@@ -1212,16 +1035,18 @@ DDEV Commands:
 
 MOODLE INFORMATION:
 -------------------
-Installation Directory: $MOODLE_DIR
-Data Directory: $MOODLE_DATA
-URL: http://$MOODLE_DOMAIN
+Project Directory: $MOODLE_DIR
+Project Name: $MOODLE_PROJECT
+URL: $MOODLE_URL
 Admin Username: $MOODLE_ADMIN_USER
 Admin Password: $MOODLE_ADMIN_PASS
 Admin Email: $ADMIN_EMAIL
-Database Name: $MOODLE_DB_NAME
-Database User: $MOODLE_DB_USER
-Database Password: $MOODLE_DB_PASS
-MySQL Root Password: $MYSQL_ROOT_PASS
+
+DDEV Commands:
+  cd $MOODLE_DIR
+  ddev start           - Start project
+  ddev stop            - Stop project
+  ddev launch          - Open in browser
 
 OAUTH INTEGRATION:
 ------------------
@@ -1234,7 +1059,7 @@ OpenSocial OAuth Endpoints:
   Token: $OPENSOCIAL_URL/oauth/token
   User Info: $OPENSOCIAL_URL/oauth/userinfo
 
-Moodle Redirect URI: http://$MOODLE_DOMAIN/admin/oauth2callback.php
+Moodle Redirect URI: $MOODLE_URL/admin/oauth2callback.php
 
 MOODLE WEB CONFIGURATION REQUIRED:
 -----------------------------------
@@ -1268,7 +1093,7 @@ Complete these steps in Moodle web interface:
 
 5. Test SSO:
    - Log out of Moodle
-   - Visit: http://$MOODLE_DOMAIN
+   - Visit: $MOODLE_URL
    - Click "OpenSocial" login button
    - Authenticate with OpenSocial credentials
 
@@ -1277,16 +1102,12 @@ NEXT STEPS:
 1. Access OpenSocial: $OPENSOCIAL_URL
    Login: $OPENSOCIAL_ADMIN_USER / $OPENSOCIAL_ADMIN_PASS
 
-2. Access Moodle: http://$MOODLE_DOMAIN
+2. Access Moodle: $MOODLE_URL
    Login: $MOODLE_ADMIN_USER / $MOODLE_ADMIN_PASS
 
 3. Complete Moodle OAuth2 configuration via web interface (see above)
 
 4. Test SSO login
-
-5. Configure SSL for production:
-   For Moodle: sudo certbot --nginx -d $MOODLE_DOMAIN
-   For OpenSocial: DDEV uses mkcert (already configured)
 
 TROUBLESHOOTING:
 ----------------
@@ -1294,24 +1115,25 @@ View OpenSocial logs:
   cd $OPENSOCIAL_DIR && ddev logs
 
 View Moodle logs:
-  tail -f /var/log/nginx/error.log
-  tail -f $MOODLE_DATA/error.log
+  cd $MOODLE_DIR && ddev logs
+
+Check DDEV status:
+  cd $OPENSOCIAL_DIR && ddev describe
+  cd $MOODLE_DIR && ddev describe
 
 Test OAuth endpoints:
   curl $OPENSOCIAL_URL/oauth/authorize
   curl $OPENSOCIAL_URL/oauth/token
   curl $OPENSOCIAL_URL/oauth/userinfo
 
-SECURITY NOTES:
----------------
-- Change default admin passwords immediately
-- Keep this file secure (contains sensitive credentials)
-- Configure firewall rules as needed
-- Set up regular backups
-- Use HTTPS in production
+IMPORTANT NOTES:
+----------------
+- Both platforms run in DDEV (no port conflicts!)
+- URLs use HTTPS with mkcert certificates
+- Both projects run simultaneously on different ports
+- DDEV automatically manages routing
 
 Checkpoint File: $CHECKPOINT_FILE
-Installation Log: /var/log/opensocial_moodle_sso_install.log
 ========================================
 EOF
 
@@ -1320,7 +1142,7 @@ chmod 600 "$CREDENTIALS_FILE"
 print_status "✓ Credentials saved to: $CREDENTIALS_FILE"
 
 ################################################################################
-# PART 12: FINAL SUMMARY
+# PART 9: FINAL SUMMARY
 ################################################################################
 
 print_section "Installation Complete!"
@@ -1329,55 +1151,35 @@ echo ""
 print_status "OpenSocial Installation:"
 echo "  URL: $OPENSOCIAL_URL"
 echo "  Admin: $OPENSOCIAL_ADMIN_USER / $OPENSOCIAL_ADMIN_PASS"
-echo "  Login command: cd $OPENSOCIAL_DIR && ddev drush uli"
-echo "  Launch: cd $OPENSOCIAL_DIR && ddev launch"
+echo "  Commands: cd $OPENSOCIAL_DIR && ddev drush uli"
 echo ""
 
 print_status "Moodle Installation:"
-echo "  URL: http://$MOODLE_DOMAIN"
+echo "  URL: $MOODLE_URL"
 echo "  Admin: $MOODLE_ADMIN_USER / $MOODLE_ADMIN_PASS"
-echo "  Database: $MOODLE_DB_NAME"
+echo "  Commands: cd $MOODLE_DIR && ddev launch"
 echo ""
 
 print_status "OAuth Integration:"
 echo "  Client ID: $OAUTH_CLIENT_ID"
 echo "  Client Secret: [saved in credentials file]"
-echo "  OAuth Endpoints configured in OpenSocial"
 echo ""
 
-print_warning "IMPORTANT: Complete OAuth Configuration in Moodle Web Interface"
+print_warning "IMPORTANT: Complete OAuth Configuration in Moodle"
 echo ""
-echo "Follow these steps:"
-echo "  1. Log in to Moodle as admin: http://$MOODLE_DOMAIN"
-echo "  2. Go to: Site administration > Server > OAuth 2 services"
-echo "  3. Create new custom service with credentials from:"
-echo "     sudo cat $CREDENTIALS_FILE"
-echo "  4. Configure endpoints and user field mappings"
-echo "  5. Enable OAuth 2 authentication"
-echo "  6. Test SSO login"
+echo "1. Open Moodle: $MOODLE_URL"
+echo "2. Go to: Site administration > Server > OAuth 2 services"
+echo "3. Create custom service with credentials from:"
+echo "   sudo cat $CREDENTIALS_FILE"
 echo ""
 
-print_section "Quick Start Commands"
-echo "Access OpenSocial:"
-echo "  cd $OPENSOCIAL_DIR"
-echo "  ddev launch"
-echo ""
-echo "Access Moodle:"
-echo "  http://$MOODLE_DOMAIN"
-echo ""
-echo "View credentials:"
-echo "  sudo cat $CREDENTIALS_FILE"
-echo ""
-echo "Check OpenSocial status:"
-echo "  cd $OPENSOCIAL_DIR && ddev describe"
-echo ""
-echo "Check Moodle status:"
-echo "  sudo systemctl status nginx"
-echo "  sudo systemctl status php${PHP_VERSION}-fpm"
+print_section "Quick Access"
+echo "OpenSocial: cd $OPENSOCIAL_DIR && ddev launch"
+echo "Moodle: cd $MOODLE_DIR && ddev launch"
+echo "Credentials: sudo cat $CREDENTIALS_FILE"
 echo ""
 
-print_status "All credentials saved to: $CREDENTIALS_FILE"
-print_status "Installation log: $CHECKPOINT_FILE"
-print_status "Installation script completed successfully!"
+print_status "Both platforms are running in DDEV - no port conflicts!"
+print_status "Installation completed successfully!"
 
 exit 0
