@@ -4,6 +4,7 @@
 # OpenSocial + Moodle Fully Integrated SSO Installation Script (DDEV Version)
 # Both platforms installed in DDEV to avoid port conflicts
 # Based on: https://github.com/rjzaar/opensocial-moodle-sso-integration
+# Modified to store files in script directory and check for URL conflicts
 ################################################################################
 
 set -e  # Exit on any error
@@ -57,27 +58,61 @@ check_root
 ACTUAL_USER="${SUDO_USER:-$USER}"
 ACTUAL_HOME=$(eval echo ~$ACTUAL_USER)
 
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+print_status "Script directory: $SCRIPT_DIR"
+print_status "Files will be stored in: $SCRIPT_DIR"
+
+# Function to check if a DDEV site URL is already in use
+check_url_available() {
+    local project_name=$1
+    local counter=0
+    local test_name="$project_name"
+    
+    # Check if ddev command is available
+    if ! command -v ddev &> /dev/null; then
+        echo "$test_name"
+        return
+    fi
+    
+    # Check existing DDEV projects as actual user
+    while su - $ACTUAL_USER -c "ddev list 2>/dev/null | grep -q \"$test_name\""; do
+        counter=$((counter + 1))
+        test_name="${project_name}${counter}"
+        print_status "URL conflict detected, trying: $test_name"
+    done
+    
+    echo "$test_name"
+}
+
 print_section "Integrated OpenSocial + Moodle SSO Installation (DDEV)"
 echo "This script will install both platforms in DDEV:"
-echo "  1. OpenSocial (Drupal) - https://opensocial.ddev.site"
-echo "  2. Moodle LMS - https://moodle.ddev.site"
+echo "  1. OpenSocial (Drupal)"
+echo "  2. Moodle LMS"
 echo "  3. Complete SSO integration between them"
 echo ""
 print_warning "Both systems run in DDEV containers (no port conflicts!)"
+print_warning "Files will be stored in: $SCRIPT_DIR"
 echo ""
 
 # Configuration variables
 print_section "Configuration"
 
 # OpenSocial Configuration
-OPENSOCIAL_PROJECT="${OPENSOCIAL_PROJECT:-opensocial}"
+OPENSOCIAL_PROJECT_BASE="${OPENSOCIAL_PROJECT:-opensocial}"
+OPENSOCIAL_PROJECT=$(check_url_available "$OPENSOCIAL_PROJECT_BASE")
+print_status "OpenSocial project name: $OPENSOCIAL_PROJECT"
+
 OPENSOCIAL_VERSION="${OPENSOCIAL_VERSION:-dev-master}"
 OPENSOCIAL_PHP_VERSION="8.2"
 OPENSOCIAL_MYSQL_VERSION="8.0"
 OPENSOCIAL_NODEJS_VERSION="18"
 
 # Moodle Configuration
-MOODLE_PROJECT="${MOODLE_PROJECT:-moodle}"
+MOODLE_PROJECT_BASE="${MOODLE_PROJECT:-moodle}"
+MOODLE_PROJECT=$(check_url_available "$MOODLE_PROJECT_BASE")
+print_status "Moodle project name: $MOODLE_PROJECT"
+
 MOODLE_PHP_VERSION="8.1"
 MOODLE_MYSQL_VERSION="8.0"
 MOODLE_VERSION="MOODLE_404_STABLE"
@@ -103,11 +138,12 @@ print_status "Configuration set:"
 echo "  OpenSocial URL: $OPENSOCIAL_URL"
 echo "  Moodle URL: $MOODLE_URL"
 echo "  Admin Email: $ADMIN_EMAIL"
+echo "  Storage Location: $SCRIPT_DIR"
 echo ""
 
-# Checkpoint and credentials files
-CHECKPOINT_FILE="/var/log/opensocial_moodle_ddev_install.checkpoint"
-CREDENTIALS_FILE="/root/opensocial_moodle_ddev_credentials.txt"
+# Checkpoint and credentials files - stored in script directory
+CHECKPOINT_FILE="$SCRIPT_DIR/opensocial_moodle_ddev_install.checkpoint"
+CREDENTIALS_FILE="$SCRIPT_DIR/opensocial_moodle_ddev_credentials.txt"
 
 # Initialize checkpoint
 if [ ! -f "$CHECKPOINT_FILE" ]; then
@@ -234,7 +270,7 @@ fi
 
 print_section "PART 3: OpenSocial Installation"
 
-OPENSOCIAL_DIR="$ACTUAL_HOME/$OPENSOCIAL_PROJECT"
+OPENSOCIAL_DIR="$SCRIPT_DIR/$OPENSOCIAL_PROJECT"
 
 # Step 3.1: Create directory
 if ! is_complete "STEP_OPENSOCIAL_DIR"; then
@@ -506,7 +542,7 @@ fi
 
 print_section "PART 4: Moodle Installation in DDEV"
 
-MOODLE_DIR="$ACTUAL_HOME/$MOODLE_PROJECT"
+MOODLE_DIR="$SCRIPT_DIR/$MOODLE_PROJECT"
 
 # Step 4.1: Create directory
 if ! is_complete "STEP_MOODLE_DIR"; then
@@ -1589,6 +1625,7 @@ OpenSocial + Moodle SSO Integration
 Complete Installation (DDEV)
 ========================================
 Installation Date: $(date)
+Storage Location: $SCRIPT_DIR
 
 OPENSOCIAL (Drupal) INFORMATION:
 ---------------------------------
@@ -1706,6 +1743,7 @@ IMPORTANT NOTES:
 - URLs use HTTPS with mkcert certificates
 - Both projects run simultaneously on different ports
 - DDEV automatically manages routing
+- All files stored in: $SCRIPT_DIR
 
 Checkpoint File: $CHECKPOINT_FILE
 ========================================
@@ -1725,12 +1763,14 @@ echo ""
 print_status "OpenSocial Installation:"
 echo "  URL: $OPENSOCIAL_URL"
 echo "  Admin: $OPENSOCIAL_ADMIN_USER / $OPENSOCIAL_ADMIN_PASS"
+echo "  Location: $OPENSOCIAL_DIR"
 echo "  Commands: cd $OPENSOCIAL_DIR && ddev drush uli"
 echo ""
 
 print_status "Moodle Installation:"
 echo "  URL: $MOODLE_URL"
 echo "  Admin: $MOODLE_ADMIN_USER / $MOODLE_ADMIN_PASS"
+echo "  Location: $MOODLE_DIR"
 echo "  Commands: cd $MOODLE_DIR && ddev launch"
 echo ""
 
@@ -1739,21 +1779,28 @@ echo "  Client ID: $OAUTH_CLIENT_ID"
 echo "  Client Secret: [saved in credentials file]"
 echo ""
 
+print_status "Storage Location:"
+echo "  All files stored in: $SCRIPT_DIR"
+echo "  Credentials file: $CREDENTIALS_FILE"
+echo "  Checkpoint file: $CHECKPOINT_FILE"
+echo ""
+
 print_warning "IMPORTANT: Complete OAuth Configuration in Moodle"
 echo ""
 echo "1. Open Moodle: $MOODLE_URL"
 echo "2. Go to: Site administration > Server > OAuth 2 services"
 echo "3. Create custom service with credentials from:"
-echo "   sudo cat $CREDENTIALS_FILE"
+echo "   cat $CREDENTIALS_FILE"
 echo ""
 
 print_section "Quick Access"
 echo "OpenSocial: cd $OPENSOCIAL_DIR && ddev launch"
 echo "Moodle: cd $MOODLE_DIR && ddev launch"
-echo "Credentials: sudo cat $CREDENTIALS_FILE"
+echo "Credentials: cat $CREDENTIALS_FILE"
 echo ""
 
 print_status "Both platforms are running in DDEV - no port conflicts!"
+print_status "All files stored in script directory: $SCRIPT_DIR"
 print_status "Installation completed successfully!"
 
 exit 0
