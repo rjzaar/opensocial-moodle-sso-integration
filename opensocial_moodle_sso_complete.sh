@@ -33,7 +33,7 @@ CONFIGURATION:
     Default settings:
     - Admin email: admin@example.com
     - Admin username: admin
-    - Admin password: admin
+    - Admin password: Admin@123
     - OpenSocial URL: https://opensocial.ddev.site (or opensocial1, opensocial2, etc.)
     - Moodle URL: https://moodle.ddev.site (or moodle1, moodle2, etc.)
 
@@ -187,11 +187,11 @@ OAUTH_CLIENT_SECRET=$(openssl rand -hex 32)
 # Site configurations
 OPENSOCIAL_SITE_NAME="OpenSocial Community"
 OPENSOCIAL_ADMIN_USER="admin"
-OPENSOCIAL_ADMIN_PASS="admin"
+OPENSOCIAL_ADMIN_PASS="Admin@123"
 OPENSOCIAL_URL="https://${OPENSOCIAL_PROJECT}.ddev.site"
 
 MOODLE_ADMIN_USER="admin"
-MOODLE_ADMIN_PASS="admin"
+MOODLE_ADMIN_PASS="Admin@123"
 MOODLE_URL="https://${MOODLE_PROJECT}.ddev.site"
 
 print_status "Configuration set:"
