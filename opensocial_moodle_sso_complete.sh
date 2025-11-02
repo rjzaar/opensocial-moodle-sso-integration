@@ -4,10 +4,11 @@
 # OpenSocial + Moodle Fully Integrated SSO Installation Script (DDEV Version)
 # Both platforms installed in DDEV to avoid port conflicts
 # Based on: https://github.com/rjzaar/opensocial-moodle-sso-integration
-# Modified to store files in script directory and check for URL conflicts
+# Modified to use module folders instead of inline creation
 # FIXED: Simple OAuth 6.x configuration compatibility
 # FIXED: OAuth key path verification in DDEV containers
 # FIXED: PHP deprecation warnings in module verification
+# MODIFIED: Uses opensocial_moodle_sso/ and moodle_opensocial_auth/ folders
 ################################################################################
 
 # Show usage information
@@ -56,10 +57,13 @@ NOTES:
     - Checks actual system state, not checkpoint files
     - Interactive mode: Composer may show prompts for decisions
     - Non-interactive mode (--defaults): Composer runs without prompts
+    - Module folders must be present: opensocial_moodle_sso/ and moodle_opensocial_auth/
 
 FILES:
     config.yml                                    - Configuration file (optional)
     opensocial_moodle_ddev_credentials.txt        - Generated credentials
+    opensocial_moodle_sso/                        - OpenSocial OAuth Provider module
+    moodle_opensocial_auth/                       - Moodle authentication plugin
     opensocial/                                   - OpenSocial installation
     moodle/                                       - Moodle installation
 
@@ -202,6 +206,7 @@ echo "  3. Complete SSO integration between them"
 echo ""
 print_warning "Both systems run in DDEV containers (no port conflicts!)"
 print_warning "Files will be stored in: $SCRIPT_DIR"
+print_warning "Module folders required: opensocial_moodle_sso/ and moodle_opensocial_auth/"
 echo ""
 
 # Check for --defaults flag
@@ -670,7 +675,6 @@ if ! check_opensocial_ddev_running; then
     
     # Verify DDEV is running
     if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev describe >/dev/null 2>&1"; then
-        # OpenSocial DDEV now running
         print_status "✓ OpenSocial DDEV started and verified"
     else
         print_error "Failed to start DDEV"
@@ -718,7 +722,6 @@ if ! check_opensocial_composer_installed; then
     
     # Verify installation
     if [ -f "$OPENSOCIAL_DIR/composer.json" ] && su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush --version >/dev/null 2>&1"; then
-        # OpenSocial Composer installed
         print_status "✓ OpenSocial installed via Composer"
     else
         print_error "Composer installation failed"
@@ -746,7 +749,6 @@ if ! check_opensocial_private_configured; then
     
     # Verify directory
     if [ -d "$PRIVATE_DIR" ] && [ -w "$PRIVATE_DIR" ]; then
-        # OpenSocial private directory configured
         print_status "✓ Private directory configured and writable"
         echo "  📊 Path: $PRIVATE_ABS_PATH"
         echo "  🔒 Permissions: 755"
@@ -771,7 +773,6 @@ if ! check_opensocial_installed; then
     # Check if already installed
     if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
         print_status "✓ OpenSocial already installed"
-        # OpenSocial installation complete
     else
         # Prepare settings directory
         if [ -d "$SETTINGS_DIR" ]; then
@@ -827,7 +828,6 @@ EOF
             
             # Verify installation
             if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
-                # OpenSocial installation complete
                 print_status "✓ OpenSocial installed and verified"
                 echo "  🌐 Site URL: $OPENSOCIAL_URL"
                 echo "  👤 Admin user: $OPENSOCIAL_ADMIN_USER"
@@ -870,7 +870,6 @@ if ! check_moodle_dir_exists; then
     
     # Verify directory
     if [ -d "$MOODLE_DIR" ] && [ -w "$MOODLE_DIR" ]; then
-        # Moodle directory created
         print_status "✓ Moodle directory verified and writable"
     else
         print_error "Failed to create or access directory: $MOODLE_DIR"
@@ -898,7 +897,6 @@ if ! check_moodle_downloaded; then
     
     # Verify download
     if [ -f "$MOODLE_DIR/html/version.php" ]; then
-        # Moodle downloaded
         print_status "✓ Moodle downloaded and verified"
         echo "  📄 Version file: $MOODLE_DIR/html/version.php"
         echo "  📊 Directory size: $(du -sh $MOODLE_DIR/html 2>/dev/null | cut -f1)"
@@ -1000,7 +998,6 @@ MYSQLEOF
     
     # Verify configuration
     if [ -f "$MOODLE_DIR/.ddev/config.yaml" ]; then
-        # Moodle DDEV configured
         print_status "✓ DDEV configured for Moodle with MySQL settings"
         echo "  📋 Configuration files:"
         echo "     - $MOODLE_DIR/.ddev/config.yaml"
@@ -1042,11 +1039,9 @@ if ! check_moodle_ddev_running; then
         print_status "innodb_file_format: $FILE_FORMAT"
         
         if [ "$LARGE_PREFIX" = "ON" ] || [ "$LARGE_PREFIX" = "1" ]; then
-            # Moodle DDEV running
             print_status "✓ Moodle DDEV started with MySQL configured"
         else
             print_warning "MySQL settings may not be fully applied, but continuing..."
-            # Moodle DDEV running
         fi
     else
         print_error "Failed to start DDEV"
@@ -1076,7 +1071,6 @@ if ! check_moodle_data_exists; then
     
     # Verify directory
     if [ -d "$MOODLE_DIR/moodledata" ] && [ -w "$MOODLE_DIR/moodledata" ]; then
-        # Moodle data directory created
         print_status "✓ Moodle data directory configured"
     else
         print_error "Failed to create moodledata directory"
@@ -1097,7 +1091,6 @@ if ! check_moodle_installed; then
         # Try to check Moodle status
         if su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev exec php html/admin/cli/maintenance.php --help >/dev/null 2>&1"; then
             print_status "Moodle appears to be installed"
-            # Moodle installation complete
             print_status "✓ Moodle installation verified"
         else
             print_warning "config.php exists but Moodle may not be fully installed. Attempting install..."
@@ -1177,7 +1170,6 @@ if ! check_moodle_installed; then
         
         # Final verification
         if [ -f "$MOODLE_DIR/html/config.php" ]; then
-            # Moodle installation complete
             print_status "✓ Moodle installation verified"
         else
             print_error "Moodle installation failed - config.php not created"
@@ -1243,7 +1235,6 @@ if ! check_simple_oauth_installed; then
     
     # Verify installation
     if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module --status=enabled | grep -q simple_oauth"; then
-        # Simple OAuth installed
         print_status "✓ Simple OAuth module installed and verified"
     else
         print_error "Failed to install Simple OAuth module"
@@ -1293,7 +1284,6 @@ if ! check_oauth_keys_exist; then
     # Verify keys exist and are valid
     if [ -f "$OAUTH_KEYS_DIR/private.key" ] && [ -f "$OAUTH_KEYS_DIR/public.key" ] && \
        openssl rsa -in "$OAUTH_KEYS_DIR/private.key" -check -noout >/dev/null 2>&1; then
-        # OAuth keys generated
         print_status "✓ OAuth keys generated and verified"
         echo "  📊 Key details:"
         echo "     🔑 Private: $OAUTH_KEYS_DIR/private.key (2048 bit RSA)"
@@ -1435,283 +1425,81 @@ else
 fi
 
 ################################################################################
-# PART 6: OPENSOCIAL OAUTH PROVIDER MODULE
+# PART 6: OPENSOCIAL OAUTH PROVIDER MODULE (MODIFIED - USES FOLDER)
 ################################################################################
 
 print_section "PART 6: OpenSocial OAuth Provider Module"
 
 if ! check_oauth_provider_module_exists; then
-    print_step "Creating OpenSocial OAuth Provider module..."
+    print_step "Installing OpenSocial OAuth Provider module..."
     
-    MODULE_DIR="$OPENSOCIAL_DIR/html/modules/custom/opensocial_oauth_provider"
-    echo "  📁 Module directory: $MODULE_DIR"
+    MODULE_SRC="$SCRIPT_DIR/opensocial_moodle_sso"
+    MODULE_DEST="$OPENSOCIAL_DIR/html/modules/custom/opensocial_oauth_provider"
     
-    # Check if module directory already exists
-    if [ -d "$MODULE_DIR" ] && [ -f "$MODULE_DIR/opensocial_oauth_provider.info.yml" ]; then
-        print_status "✓ OpenSocial OAuth Provider module already exists"
-        echo "  ✓ Found: $MODULE_DIR/opensocial_oauth_provider.info.yml"
-    else
-        print_status "Creating module directory structure..."
-        su - $ACTUAL_USER -c "mkdir -p '$MODULE_DIR/src/Controller'"
-        su - $ACTUAL_USER -c "mkdir -p '$MODULE_DIR/src/Form'"
-        
-        # Create module info file
-        print_status "Creating module info file..."
-        echo "  📝 File: $MODULE_DIR/opensocial_oauth_provider.info.yml"
-        cat > "$MODULE_DIR/opensocial_oauth_provider.info.yml" <<'EOF'
-name: 'OpenSocial OAuth Provider'
-type: module
-description: 'Provides OAuth2 authentication endpoints for Moodle integration'
-core_version_requirement: ^9 || ^10
-package: 'OpenSocial'
-dependencies:
-  - drupal:user
-  - simple_oauth:simple_oauth
-EOF
-        print_status "✓ Created module info file"
-        
-        # Create module file
-        print_status "Creating module file..."
-        echo "  📝 File: $MODULE_DIR/opensocial_oauth_provider.module"
-        cat > "$MODULE_DIR/opensocial_oauth_provider.module" <<'EOF'
-<?php
-
-/**
- * @file
- * Contains opensocial_oauth_provider.module.
- */
-
-use Drupal\Core\Routing\RouteMatchInterface;
-
-/**
- * Implements hook_help().
- */
-function opensocial_oauth_provider_help($route_name, RouteMatchInterface $route_match) {
-  switch ($route_name) {
-    case 'help.page.opensocial_oauth_provider':
-      $output = '';
-      $output .= '<h3>' . t('About') . '</h3>';
-      $output .= '<p>' . t('Provides OAuth2 authentication endpoints for Moodle integration.') . '</p>';
-      return $output;
-
-    default:
-  }
-}
-EOF
-        print_status "✓ Created module file"
-        
-        # Create routing file
-        print_status "Creating routing file..."
-        echo "  📝 File: $MODULE_DIR/opensocial_oauth_provider.routing.yml"
-        cat > "$MODULE_DIR/opensocial_oauth_provider.routing.yml" <<'EOF'
-opensocial_oauth_provider.userinfo:
-  path: '/oauth/userinfo'
-  defaults:
-    _controller: '\Drupal\opensocial_oauth_provider\Controller\UserInfoController::getUserInfo'
-  requirements:
-    _permission: 'access content'
-  options:
-    no_cache: TRUE
-
-opensocial_oauth_provider.settings:
-  path: '/admin/config/opensocial/oauth-provider'
-  defaults:
-    _form: '\Drupal\opensocial_oauth_provider\Form\SettingsForm'
-    _title: 'OAuth Provider Settings'
-  requirements:
-    _permission: 'administer site configuration'
-EOF
+    echo "  📁 Source: $MODULE_SRC"
+    echo "  📁 Destination: $MODULE_DEST"
     
-    # Create UserInfo Controller
-    cat > "$MODULE_DIR/src/Controller/UserInfoController.php" <<'EOF'
-<?php
-
-namespace Drupal\opensocial_oauth_provider\Controller;
-
-use Drupal\Core\Controller\ControllerBase;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Drupal\Core\Session\AccountInterface;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-
-/**
- * Returns responses for OAuth userinfo endpoint.
- */
-class UserInfoController extends ControllerBase {
-
-  /**
-   * The current user.
-   *
-   * @var \Drupal\Core\Session\AccountInterface
-   */
-  protected $currentUser;
-
-  /**
-   * Constructs a UserInfoController object.
-   *
-   * @param \Drupal\Core\Session\AccountInterface $current_user
-   *   The current user.
-   */
-  public function __construct(AccountInterface $current_user) {
-    $this->currentUser = $current_user;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public static function create(ContainerInterface $container) {
-    return new static(
-      $container->get('current_user')
-    );
-  }
-
-  /**
-   * Returns user information for OAuth.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The request object.
-   *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
-   *   JSON response with user data.
-   */
-  public function getUserInfo(Request $request) {
-    $user = \Drupal::currentUser();
-    
-    if ($user->isAnonymous()) {
-      return new JsonResponse(['error' => 'Unauthorized'], 401);
-    }
-
-    $account = \Drupal\user\Entity\User::load($user->id());
-    
-    $user_data = [
-      'sub' => (string) $user->id(),
-      'preferred_username' => $user->getAccountName(),
-      'email' => $user->getEmail(),
-      'email_verified' => TRUE,
-    ];
-
-    // Add profile fields if available
-    if ($account->hasField('field_profile_first_name')) {
-      $user_data['given_name'] = $account->get('field_profile_first_name')->value;
-    }
-    
-    if ($account->hasField('field_profile_last_name')) {
-      $user_data['family_name'] = $account->get('field_profile_last_name')->value;
-    }
-
-    // Add profile picture if available
-    if ($account->hasField('user_picture') && !$account->get('user_picture')->isEmpty()) {
-      $file = $account->get('user_picture')->entity;
-      if ($file) {
-        $user_data['picture'] = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
-      }
-    }
-
-    return new JsonResponse($user_data);
-  }
-
-}
-EOF
-    
-    # Create Settings Form
-    cat > "$MODULE_DIR/src/Form/SettingsForm.php" <<'EOF'
-<?php
-
-namespace Drupal\opensocial_oauth_provider\Form;
-
-use Drupal\Core\Form\ConfigFormBase;
-use Drupal\Core\Form\FormStateInterface;
-
-/**
- * Configure OpenSocial OAuth Provider settings.
- */
-class SettingsForm extends ConfigFormBase {
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function getEditableConfigNames() {
-    return ['opensocial_oauth_provider.settings'];
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getFormId() {
-    return 'opensocial_oauth_provider_settings';
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function buildForm(array $form, FormStateInterface $form_state) {
-    $config = $this->config('opensocial_oauth_provider.settings');
-
-    $form['moodle_url'] = [
-      '#type' => 'url',
-      '#title' => $this->t('Moodle URL'),
-      '#default_value' => $config->get('moodle_url'),
-      '#description' => $this->t('The URL of your Moodle installation.'),
-      '#required' => TRUE,
-    ];
-
-    $form['auto_provision'] = [
-      '#type' => 'checkbox',
-      '#title' => $this->t('Enable automatic user provisioning'),
-      '#default_value' => $config->get('auto_provision'),
-      '#description' => $this->t('Automatically create Moodle user accounts when they first log in via OAuth.'),
-    ];
-
-    return parent::buildForm($form, $form_state);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function submitForm(array &$form, FormStateInterface $form_state) {
-    $this->config('opensocial_oauth_provider.settings')
-      ->set('moodle_url', $form_state->getValue('moodle_url'))
-      ->set('auto_provision', $form_state->getValue('auto_provision'))
-      ->save();
-
-    parent::submitForm($form, $form_state);
-  }
-
-}
-EOF
-        print_status "✓ Created settings form"
-        
-        chown -R $ACTUAL_USER:$ACTUAL_USER "$MODULE_DIR"
-        print_status "✓ Set file ownership"
+    # Verify source module exists
+    if [ ! -d "$MODULE_SRC" ]; then
+        print_error "Module source not found at: $MODULE_SRC"
+        print_error "Please ensure the opensocial_moodle_sso directory is in the same location as the script"
+        print_error "Required folder structure:"
+        print_error "  $SCRIPT_DIR/opensocial_moodle_sso/"
+        print_error "  $SCRIPT_DIR/$(basename $0)"
+        exit 1
     fi
     
-    # Verify module was created
-    if [ -f "$MODULE_DIR/opensocial_oauth_provider.info.yml" ] && \
-       [ -f "$MODULE_DIR/opensocial_oauth_provider.module" ] && \
-       [ -f "$MODULE_DIR/opensocial_oauth_provider.routing.yml" ] && \
-       [ -f "$MODULE_DIR/src/Controller/UserInfoController.php" ] && \
-       [ -f "$MODULE_DIR/src/Form/SettingsForm.php" ]; then
-        # OAuth provider module created
-        print_status "✓ OpenSocial OAuth Provider module created and verified"
-        echo "  📦 Module files created:"
-        echo "     📄 $MODULE_DIR/opensocial_oauth_provider.info.yml"
-        echo "     📄 $MODULE_DIR/opensocial_oauth_provider.module"
-        echo "     📄 $MODULE_DIR/opensocial_oauth_provider.routing.yml"
-        echo "     📄 $MODULE_DIR/src/Controller/UserInfoController.php"
-        echo "     📄 $MODULE_DIR/src/Form/SettingsForm.php"
+    if [ ! -f "$MODULE_SRC/opensocial_oauth_provider.info.yml" ]; then
+        print_error "Module source incomplete - missing opensocial_oauth_provider.info.yml"
+        print_error "Please verify the opensocial_moodle_sso folder contains all required files"
+        exit 1
+    fi
+    
+    # Check if module directory already exists
+    if [ -d "$MODULE_DEST" ] && [ -f "$MODULE_DEST/opensocial_oauth_provider.info.yml" ]; then
+        print_status "✓ OpenSocial OAuth Provider module already exists"
+        echo "  ✓ Found: $MODULE_DEST/opensocial_oauth_provider.info.yml"
+    else
+        print_status "Copying module from source directory..."
+        
+        # Create parent directory if needed
+        su - $ACTUAL_USER -c "mkdir -p '$OPENSOCIAL_DIR/html/modules/custom'"
+        
+        # Copy module
+        su - $ACTUAL_USER -c "cp -r '$MODULE_SRC' '$MODULE_DEST'"
+        
+        # Set ownership
+        chown -R $ACTUAL_USER:$ACTUAL_USER "$MODULE_DEST"
+        
+        print_status "✓ Module copied successfully"
+    fi
+    
+    # Verify module was copied
+    if [ -f "$MODULE_DEST/opensocial_oauth_provider.info.yml" ] && \
+       [ -f "$MODULE_DEST/opensocial_oauth_provider.module" ] && \
+       [ -f "$MODULE_DEST/opensocial_oauth_provider.routing.yml" ] && \
+       [ -f "$MODULE_DEST/src/Controller/UserInfoController.php" ] && \
+       [ -f "$MODULE_DEST/src/Form/SettingsForm.php" ]; then
+        print_status "✓ OpenSocial OAuth Provider module installed and verified"
+        echo "  📦 Module files:"
+        echo "     📄 opensocial_oauth_provider.info.yml"
+        echo "     📄 opensocial_oauth_provider.module"
+        echo "     📄 opensocial_oauth_provider.routing.yml"
+        echo "     📄 src/Controller/UserInfoController.php"
+        echo "     📄 src/Form/SettingsForm.php"
         echo "  🌐 OAuth endpoints (after enabling):"
         echo "     - $OPENSOCIAL_URL/oauth/authorize"
         echo "     - $OPENSOCIAL_URL/oauth/token"
         echo "     - $OPENSOCIAL_URL/oauth/userinfo"
     else
-        print_error "Failed to create all OAuth Provider module files"
-        echo "  📁 Module directory: $MODULE_DIR"
+        print_error "Failed to install OAuth Provider module"
+        echo "  📁 Module destination: $MODULE_DEST"
         exit 1
     fi
 else
-    MODULE_DIR="$OPENSOCIAL_DIR/html/modules/custom/opensocial_oauth_provider"
-    print_status "✓ OAuth Provider module already created"
-    echo "  📁 Location: $MODULE_DIR"
+    MODULE_DEST="$OPENSOCIAL_DIR/html/modules/custom/opensocial_oauth_provider"
+    print_status "✓ OAuth Provider module already installed"
+    echo "  📁 Location: $MODULE_DEST"
 fi
 
 # FIXED: Enable OAuth Provider module with proper verification that handles PHP warnings
@@ -1734,7 +1522,6 @@ if ! check_oauth_provider_enabled; then
     MODULE_STATUS=$(su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush php-eval \"echo \\Drupal::service('module_handler')->moduleExists('opensocial_oauth_provider') ? 'ENABLED' : 'DISABLED';\" 2>/dev/null" || echo "DISABLED")
     
     if [ -n "$MODULE_CHECK" ] || [ "$MODULE_STATUS" = "ENABLED" ]; then
-        # OAuth provider module enabled
         print_status "✓ OAuth Provider module enabled and verified"
         print_warning "Note: PHP deprecation warnings from OpenSocial's code are harmless and can be ignored"
     else
@@ -1794,7 +1581,6 @@ echo 'FAILED';
 \"")
     
     if [ "$CLIENT_CHECK" = "VERIFIED" ]; then
-        # OAuth client created
         print_status "✓ OAuth client created and verified"
     else
         print_error "Failed to create or verify OAuth client"
@@ -1805,244 +1591,75 @@ else
 fi
 
 ################################################################################
-# PART 7: MOODLE OAUTH PLUGIN INSTALLATION
+# PART 7: MOODLE OAUTH PLUGIN INSTALLATION (MODIFIED - USES FOLDER)
 ################################################################################
 
 print_section "PART 7: Moodle OAuth Authentication Plugin"
 
 if ! check_moodle_oauth_plugin_exists; then
-    print_step "Creating Moodle OpenSocial OAuth plugin..."
+    print_step "Installing Moodle OpenSocial OAuth plugin..."
     
-    MOODLE_AUTH_DIR="$MOODLE_DIR/html/auth/opensocial"
-    echo "  📁 Plugin directory: $MOODLE_AUTH_DIR"
+    PLUGIN_SRC="$SCRIPT_DIR/moodle_opensocial_auth"
+    PLUGIN_DEST="$MOODLE_DIR/html/auth/opensocial"
     
-    # Check if plugin directory already exists
-    if [ -d "$MOODLE_AUTH_DIR" ] && [ -f "$MOODLE_AUTH_DIR/version.php" ]; then
-        print_status "✓ Moodle OAuth plugin already exists"
-        echo "  ✓ Found: $MOODLE_AUTH_DIR/version.php"
-    else
-        print_status "Creating plugin directory structure..."
-        mkdir -p "$MOODLE_AUTH_DIR/lang/en"
-        mkdir -p "$MOODLE_AUTH_DIR/db"
-        print_status "✓ Created directories"
-        
-        # Create version.php
-        print_status "Creating version.php..."
-        echo "  📝 File: $MOODLE_AUTH_DIR/version.php"
-        cat > "$MOODLE_AUTH_DIR/version.php" <<EOF
-<?php
-defined('MOODLE_INTERNAL') || die();
-
-\$plugin->version   = 2024010100;
-\$plugin->requires  = 2022041900; // Moodle 4.0
-\$plugin->component = 'auth_opensocial';
-\$plugin->maturity  = MATURITY_STABLE;
-\$plugin->release   = '1.0.0';
-EOF
-        print_status "✓ Created version.php"
-        
-        # Create auth.php
-        print_status "Creating authentication class..."
-        echo "  📝 File: $MOODLE_AUTH_DIR/auth.php"
-        cat > "$MOODLE_AUTH_DIR/auth.php" <<'AUTHEOF'
-<?php
-defined('MOODLE_INTERNAL') || die();
-
-require_once($CFG->libdir.'/authlib.php');
-
-/**
- * OpenSocial OAuth2 authentication plugin.
- */
-class auth_plugin_opensocial extends auth_plugin_base {
-
-    /**
-     * Constructor.
-     */
-    public function __construct() {
-        $this->authtype = 'opensocial';
-        $this->config = get_config('auth_opensocial');
-    }
-
-    /**
-     * Returns true if the username and password work against the authentication plugin.
-     *
-     * @param string $username The username
-     * @param string $password The password
-     * @return bool Authentication success or failure.
-     */
-    public function user_login($username, $password) {
-        return false; // OAuth doesn't use traditional login
-    }
-
-    /**
-     * Returns true if this authentication plugin can change the user's password.
-     *
-     * @return bool
-     */
-    public function can_change_password() {
-        return false;
-    }
-
-    /**
-     * Returns the URL for changing the user's password, or empty if the default should be used.
-     *
-     * @return moodle_url
-     */
-    public function change_password_url() {
-        return null;
-    }
-
-    /**
-     * Returns true if this authentication plugin can edit the users' profile.
-     *
-     * @return bool
-     */
-    public function can_edit_profile() {
-        return false;
-    }
-
-    /**
-     * Returns true if this authentication plugin is 'internal'.
-     *
-     * @return bool
-     */
-    public function is_internal() {
-        return false;
-    }
-
-    /**
-     * Indicates if password hashes should be stored in local moodle database.
-     *
-     * @return bool
-     */
-    public function prevent_local_passwords() {
-        return true;
-    }
-
-    /**
-     * Returns true if this authentication plugin uses an external source.
-     *
-     * @return bool
-     */
-    public function is_synchronised_with_external() {
-        return true;
-    }
-
-    /**
-     * Prints a form for configuring this authentication plugin.
-     *
-     * @param array $config
-     * @param string $err
-     * @param array $user_fields
-     */
-    public function config_form($config, $err, $user_fields) {
-        include 'settings.html';
-    }
-
-    /**
-     * Processes and stores configuration data for this authentication plugin.
-     */
-    public function process_config($config) {
-        if (!isset($config->opensocial_url)) {
-            $config->opensocial_url = '';
-        }
-        if (!isset($config->oauth2_issuer_id)) {
-            $config->oauth2_issuer_id = '';
-        }
-        if (!isset($config->auto_redirect)) {
-            $config->auto_redirect = 0;
-        }
-
-        set_config('opensocial_url', $config->opensocial_url, 'auth_opensocial');
-        set_config('oauth2_issuer_id', $config->oauth2_issuer_id, 'auth_opensocial');
-        set_config('auto_redirect', $config->auto_redirect, 'auth_opensocial');
-
-        return true;
-    }
-}
-AUTHEOF
-        print_status "✓ Created auth.php"
-        
-        # Create settings.html
-        print_status "Creating settings form..."
-        echo "  📝 File: $MOODLE_AUTH_DIR/settings.html"
-        cat > "$MOODLE_AUTH_DIR/settings.html" <<'SETTINGSEOF'
-<table cellspacing="0" cellpadding="5" border="0">
-<tr>
-   <td colspan="3">
-        <h2 class="main"><?php print_string('auth_opensocialsettings', 'auth_opensocial'); ?></h2>
-   </td>
-</tr>
-<tr>
-    <td align="right"><label for="opensocial_url"><?php print_string('opensocial_url', 'auth_opensocial'); ?></label></td>
-    <td>
-        <input id="opensocial_url" name="opensocial_url" type="text" size="50" value="<?php echo $config->opensocial_url ?? ''; ?>" />
-    </td>
-    <td><?php print_string('opensocial_url_desc', 'auth_opensocial'); ?></td>
-</tr>
-<tr>
-    <td align="right"><label for="oauth2_issuer_id"><?php print_string('oauth2_issuer_id', 'auth_opensocial'); ?></label></td>
-    <td>
-        <input id="oauth2_issuer_id" name="oauth2_issuer_id" type="text" size="10" value="<?php echo $config->oauth2_issuer_id ?? ''; ?>" />
-    </td>
-    <td><?php print_string('oauth2_issuer_id_desc', 'auth_opensocial'); ?></td>
-</tr>
-<tr>
-    <td align="right"><label for="auto_redirect"><?php print_string('auto_redirect', 'auth_opensocial'); ?></label></td>
-    <td>
-        <input id="auto_redirect" name="auto_redirect" type="checkbox" value="1" <?php echo !empty($config->auto_redirect) ? 'checked' : ''; ?> />
-    </td>
-    <td><?php print_string('auto_redirect_desc', 'auth_opensocial'); ?></td>
-</tr>
-</table>
-SETTINGSEOF
-        print_status "✓ Created settings.html"
-        
-        # Create language file
-        print_status "Creating language strings..."
-        echo "  📝 File: $MOODLE_AUTH_DIR/lang/en/auth_opensocial.php"
-        cat > "$MOODLE_AUTH_DIR/lang/en/auth_opensocial.php" <<'LANGEOF'
-<?php
-$string['pluginname'] = 'OpenSocial OAuth2';
-$string['auth_opensocialdescription'] = 'OpenSocial OAuth2 authentication';
-$string['auth_opensocialsettings'] = 'OpenSocial OAuth2 Settings';
-$string['opensocial_url'] = 'OpenSocial URL';
-$string['opensocial_url_desc'] = 'The base URL of your OpenSocial installation (e.g., https://opensocial.ddev.site)';
-$string['oauth2_issuer_id'] = 'OAuth2 Issuer ID';
-$string['oauth2_issuer_id_desc'] = 'The ID of the OAuth2 issuer configured in Moodle';
-$string['auto_redirect'] = 'Auto-redirect to OpenSocial login';
-$string['auto_redirect_desc'] = 'Automatically redirect users to OpenSocial login page';
-LANGEOF
-        print_status "✓ Created language file"
-        
-        chown -R $ACTUAL_USER:$ACTUAL_USER "$MOODLE_AUTH_DIR"
-        print_status "✓ Set file ownership"
+    echo "  📁 Source: $PLUGIN_SRC"
+    echo "  📁 Destination: $PLUGIN_DEST"
+    
+    # Verify source plugin exists
+    if [ ! -d "$PLUGIN_SRC" ]; then
+        print_error "Plugin source not found at: $PLUGIN_SRC"
+        print_error "Please ensure the moodle_opensocial_auth directory is in the same location as the script"
+        print_error "Required folder structure:"
+        print_error "  $SCRIPT_DIR/moodle_opensocial_auth/"
+        print_error "  $SCRIPT_DIR/$(basename $0)"
+        exit 1
     fi
     
-    # Verify plugin was created
-    if [ -f "$MOODLE_AUTH_DIR/version.php" ] && [ -f "$MOODLE_AUTH_DIR/auth.php" ]; then
-        # Moodle OAuth plugin created
-        print_status "✓ Moodle OAuth plugin created and verified"
-        echo "  📦 Plugin files created:"
-        echo "     📄 $MOODLE_AUTH_DIR/version.php"
-        echo "     📄 $MOODLE_AUTH_DIR/auth.php"
-        echo "     📄 $MOODLE_AUTH_DIR/settings.html"
-        echo "     📄 $MOODLE_AUTH_DIR/lang/en/auth_opensocial.php"
+    if [ ! -f "$PLUGIN_SRC/version.php" ]; then
+        print_error "Plugin source incomplete - missing version.php"
+        print_error "Please verify the moodle_opensocial_auth folder contains all required files"
+        exit 1
+    fi
+    
+    # Check if plugin directory already exists
+    if [ -d "$PLUGIN_DEST" ] && [ -f "$PLUGIN_DEST/version.php" ]; then
+        print_status "✓ Moodle OAuth plugin already exists"
+        echo "  ✓ Found: $PLUGIN_DEST/version.php"
+    else
+        print_status "Copying plugin from source directory..."
+        
+        # Copy plugin
+        su - $ACTUAL_USER -c "cp -r '$PLUGIN_SRC' '$PLUGIN_DEST'"
+        
+        # Set ownership
+        chown -R $ACTUAL_USER:$ACTUAL_USER "$PLUGIN_DEST"
+        
+        print_status "✓ Plugin copied successfully"
+    fi
+    
+    # Verify plugin was copied
+    if [ -f "$PLUGIN_DEST/version.php" ] && [ -f "$PLUGIN_DEST/auth.php" ]; then
+        print_status "✓ Moodle OAuth plugin installed and verified"
+        echo "  📦 Plugin files:"
+        echo "     📄 version.php"
+        echo "     📄 auth.php"
+        echo "     📄 settings.html"
+        echo "     📄 lang/en/auth_opensocial.php"
+        echo "     📄 db/upgrade.php"
         echo "  🔧 Plugin configuration:"
         echo "     - Plugin name: auth_opensocial"
         echo "     - Component: auth_opensocial"
-        echo "     - Version: 2024010100"
         echo "  ⚙️  Configuration in Moodle:"
         echo "     Site administration > Plugins > Authentication > OpenSocial OAuth2"
     else
-        print_error "Failed to create Moodle OAuth plugin"
-        echo "  📁 Plugin directory: $MOODLE_AUTH_DIR"
+        print_error "Failed to install Moodle OAuth plugin"
+        echo "  📁 Plugin destination: $PLUGIN_DEST"
         exit 1
     fi
 else
-    MOODLE_AUTH_DIR="$MOODLE_DIR/html/auth/opensocial"
-    print_status "✓ Moodle OAuth plugin already created"
-    echo "  📁 Location: $MOODLE_AUTH_DIR"
+    PLUGIN_DEST="$MOODLE_DIR/html/auth/opensocial"
+    print_status "✓ Moodle OAuth plugin already installed"
+    echo "  📁 Location: $PLUGIN_DEST"
 fi
 
 ################################################################################
@@ -2176,6 +1793,7 @@ IMPORTANT NOTES:
 - Both projects run simultaneously on different ports
 - DDEV automatically manages routing
 - All files stored in: $SCRIPT_DIR
+- Module folders used: opensocial_moodle_sso/ and moodle_opensocial_auth/
 - PHP deprecation warnings from OpenSocial code are harmless
 
 Credentials File: $CREDENTIALS_FILE
@@ -2215,6 +1833,7 @@ echo ""
 print_status "Storage Location:"
 echo "  All files stored in: $SCRIPT_DIR"
 echo "  Credentials file: $CREDENTIALS_FILE"
+echo "  Module folders: opensocial_moodle_sso/ and moodle_opensocial_auth/"
 echo ""
 
 print_warning "IMPORTANT: Complete OAuth Configuration in Moodle"
