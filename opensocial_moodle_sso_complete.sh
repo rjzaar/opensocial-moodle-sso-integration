@@ -6,6 +6,7 @@
 # Based on: https://github.com/rjzaar/opensocial-moodle-sso-integration
 # Modified to store files in script directory and check for URL conflicts
 # FIXED: Simple OAuth 6.x configuration compatibility
+# FIXED: OAuth key path verification in DDEV containers
 ################################################################################
 
 # Show usage information
@@ -347,12 +348,12 @@ check_opensocial_ddev_configured() {
 
 check_opensocial_ddev_running() {
     [ -d "$OPENSOCIAL_DIR" ] && \
-    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev describe >/dev/null 2>&1"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev describe >/dev/null 2>&1"
 }
 
 check_opensocial_composer_installed() {
     [ -f "$OPENSOCIAL_DIR/composer.json" ] && \
-    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush --version >/dev/null 2>&1"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush --version >/dev/null 2>&1"
 }
 
 check_opensocial_private_configured() {
@@ -362,7 +363,7 @@ check_opensocial_private_configured() {
 
 check_opensocial_installed() {
     [ -d "$OPENSOCIAL_DIR" ] && \
-    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"
 }
 
 check_moodle_dir_exists() {
@@ -379,7 +380,7 @@ check_moodle_ddev_configured() {
 
 check_moodle_ddev_running() {
     [ -d "$MOODLE_DIR" ] && \
-    su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev describe >/dev/null 2>&1"
+    su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev describe >/dev/null 2>&1"
 }
 
 check_moodle_data_exists() {
@@ -392,7 +393,7 @@ check_moodle_installed() {
 
 check_simple_oauth_installed() {
     [ -d "$OPENSOCIAL_DIR" ] && \
-    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q simple_oauth"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q simple_oauth"
 }
 
 check_oauth_keys_exist() {
@@ -405,16 +406,16 @@ check_oauth_keys_exist() {
 check_oauth_configured() {
     [ -d "$OPENSOCIAL_DIR" ] || return 1
     
-    # Try to get config - any of these methods working means it's configured
-    local config_check=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:get simple_oauth.settings 2>/dev/null" || echo "")
+    # Try to get config - check for various possible key path configurations
+    local config_check=$(su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush config:get simple_oauth.settings 2>/dev/null" || echo "")
     
-    # Check if either public_key or public_key_path is set
-    if echo "$config_check" | grep -q "public_key.*keys"; then
+    # Check if either public_key or public_key_path is set with any valid path
+    if echo "$config_check" | grep -qE "public_key.*(/var/www/keys|../keys|keys)"; then
         return 0
     fi
     
     # Additional check: verify keys are accessible from container
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev exec test -f /var/www/html/../keys/public.key 2>/dev/null"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev exec 'test -f /var/www/keys/public.key' 2>/dev/null"; then
         # Keys exist, let's assume config is okay if module is enabled
         if check_simple_oauth_installed; then
             return 0
@@ -430,12 +431,12 @@ check_oauth_provider_module_exists() {
 
 check_oauth_provider_enabled() {
     [ -d "$OPENSOCIAL_DIR" ] && \
-    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q opensocial_oauth_provider"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q opensocial_oauth_provider"
 }
 
 check_oauth_client_exists() {
     [ -d "$OPENSOCIAL_DIR" ] && \
-    local client_check=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush php-eval \"
+    local client_check=$(su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush php-eval \"
 \\$clients = \\Drupal\\consumers\\Entity\\Consumer::loadMultiple();
 foreach (\\$clients as \\$client) {
   if (\\$client->get('client_id')->value == '$OAUTH_CLIENT_ID') {
@@ -572,7 +573,7 @@ if ! check_opensocial_dir_exists; then
     echo "  📁 Location: $OPENSOCIAL_DIR"
     
     if [ ! -d "$OPENSOCIAL_DIR" ]; then
-        su - $ACTUAL_USER -c "mkdir -p $OPENSOCIAL_DIR"
+        su - $ACTUAL_USER -c "mkdir -p '$OPENSOCIAL_DIR'"
         print_status "✓ Created directory: $OPENSOCIAL_DIR"
     else
         print_status "✓ Directory already exists: $OPENSOCIAL_DIR"
@@ -600,7 +601,7 @@ if ! check_opensocial_ddev_configured; then
         print_status "✓ DDEV config already exists: $OPENSOCIAL_DIR/.ddev/config.yaml"
     else
         print_status "Creating DDEV configuration..."
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev config --project-type=drupal \
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev config --project-type=drupal \
             --docroot=html \
             --php-version=$OPENSOCIAL_PHP_VERSION \
             --database=mysql:$OPENSOCIAL_MYSQL_VERSION \
@@ -650,14 +651,14 @@ if ! check_opensocial_ddev_running; then
     print_step "Starting OpenSocial DDEV..."
     
     # Check if already running
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev describe >/dev/null 2>&1"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev describe >/dev/null 2>&1"; then
         print_status "DDEV already running"
     else
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev start"
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev start"
     fi
     
     # Verify DDEV is running
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev describe >/dev/null 2>&1"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev describe >/dev/null 2>&1"; then
         # OpenSocial DDEV now running
         print_status "✓ OpenSocial DDEV started and verified"
     else
@@ -667,9 +668,9 @@ if ! check_opensocial_ddev_running; then
 else
     print_status "✓ OpenSocial DDEV already started (skipping)"
     # Verify it's still running
-    if ! su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev describe >/dev/null 2>&1"; then
+    if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev describe >/dev/null 2>&1"; then
         print_warning "DDEV was marked as started but is not running. Restarting..."
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev start"
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev start"
     fi
 fi
 
@@ -687,25 +688,25 @@ if ! check_opensocial_composer_installed; then
     # Check if composer.json already exists
     if [ -f "$OPENSOCIAL_DIR/composer.json" ]; then
         print_status "composer.json already exists, running composer install..."
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer install $COMPOSER_FLAGS"
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer install $COMPOSER_FLAGS"
     else
         if [ "$OPENSOCIAL_VERSION" = "dev-master" ]; then
-            su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer create-project goalgorilla/social_template:dev-master . --no-interaction --stability dev"
+            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project goalgorilla/social_template:dev-master . --no-interaction --stability dev"
         else
-            su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer create-project goalgorilla/social_template:$OPENSOCIAL_VERSION . --no-interaction"
+            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project goalgorilla/social_template:$OPENSOCIAL_VERSION . --no-interaction"
         fi
     fi
     
     # Install Drush if not already installed
-    if ! su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush --version >/dev/null 2>&1"; then
+    if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush --version >/dev/null 2>&1"; then
         print_status "Installing Drush..."
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require drush/drush --dev $COMPOSER_FLAGS"
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer require drush/drush --dev $COMPOSER_FLAGS"
     else
         print_status "Drush already installed"
     fi
     
     # Verify installation
-    if [ -f "$OPENSOCIAL_DIR/composer.json" ] && su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush --version >/dev/null 2>&1"; then
+    if [ -f "$OPENSOCIAL_DIR/composer.json" ] && su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush --version >/dev/null 2>&1"; then
         # OpenSocial Composer installed
         print_status "✓ OpenSocial installed via Composer"
     else
@@ -725,8 +726,8 @@ if ! check_opensocial_private_configured; then
     echo "  📁 Location: $PRIVATE_ABS_PATH"
     
     if [ ! -d "$PRIVATE_DIR" ]; then
-        su - $ACTUAL_USER -c "mkdir -p $PRIVATE_DIR"
-        su - $ACTUAL_USER -c "chmod 755 $PRIVATE_DIR"
+        su - $ACTUAL_USER -c "mkdir -p '$PRIVATE_DIR'"
+        su - $ACTUAL_USER -c "chmod 755 '$PRIVATE_DIR'"
         print_status "✓ Created private directory"
     else
         print_status "✓ Private directory already exists"
@@ -757,25 +758,25 @@ if ! check_opensocial_installed; then
     echo "  📝 Settings directory: $SETTINGS_DIR"
     
     # Check if already installed
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
         print_status "✓ OpenSocial already installed"
         # OpenSocial installation complete
     else
         # Prepare settings directory
         if [ -d "$SETTINGS_DIR" ]; then
-            su - $ACTUAL_USER -c "chmod 755 $SETTINGS_DIR" 2>/dev/null || true
+            su - $ACTUAL_USER -c "chmod 755 '$SETTINGS_DIR'" 2>/dev/null || true
             
             # Copy default settings if needed
             if [ -f "$SETTINGS_DIR/default.settings.php" ] && [ ! -f "$SETTINGS_DIR/settings.php" ]; then
                 print_status "Creating settings.php from default..."
                 echo "  📄 Source: $SETTINGS_DIR/default.settings.php"
                 echo "  📄 Target: $SETTINGS_DIR/settings.php"
-                su - $ACTUAL_USER -c "cp $SETTINGS_DIR/default.settings.php $SETTINGS_DIR/settings.php"
+                su - $ACTUAL_USER -c "cp '$SETTINGS_DIR/default.settings.php' '$SETTINGS_DIR/settings.php'"
                 print_status "✓ Copied default settings"
             fi
             
             if [ -f "$SETTINGS_DIR/settings.php" ]; then
-                su - $ACTUAL_USER -c "chmod 666 $SETTINGS_DIR/settings.php" 2>/dev/null || true
+                su - $ACTUAL_USER -c "chmod 666 '$SETTINGS_DIR/settings.php'" 2>/dev/null || true
                 
                 # Add private file path if not already present
                 if ! grep -q "\$settings\['file_private_path'\] = '\.\./private';" "$SETTINGS_DIR/settings.php"; then
@@ -795,7 +796,7 @@ EOF
         
         # Install OpenSocial
         print_status "Running Drupal site installation (this may take a few minutes)..."
-        if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush site:install social \
+        if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush site:install social \
             --account-name='$OPENSOCIAL_ADMIN_USER' \
             --account-pass='$OPENSOCIAL_ADMIN_PASS' \
             --account-mail='$ADMIN_EMAIL' \
@@ -806,15 +807,15 @@ EOF
             
             # Set proper permissions
             if [ -f "$SETTINGS_DIR/settings.php" ]; then
-                su - $ACTUAL_USER -c "chmod 444 $SETTINGS_DIR/settings.php" 2>/dev/null || true
+                su - $ACTUAL_USER -c "chmod 444 '$SETTINGS_DIR/settings.php'" 2>/dev/null || true
                 print_status "✓ Secured settings.php (444 permissions)"
             fi
             if [ -d "$SETTINGS_DIR" ]; then
-                su - $ACTUAL_USER -c "chmod 755 $SETTINGS_DIR" 2>/dev/null || true
+                su - $ACTUAL_USER -c "chmod 755 '$SETTINGS_DIR'" 2>/dev/null || true
             fi
             
             # Verify installation
-            if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
+            if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush status bootstrap 2>/dev/null | grep -q 'Successful'"; then
                 # OpenSocial installation complete
                 print_status "✓ OpenSocial installed and verified"
                 echo "  🌐 Site URL: $OPENSOCIAL_URL"
@@ -850,7 +851,7 @@ if ! check_moodle_dir_exists; then
     echo "  📁 Location: $MOODLE_DIR"
     
     if [ ! -d "$MOODLE_DIR" ]; then
-        su - $ACTUAL_USER -c "mkdir -p $MOODLE_DIR"
+        su - $ACTUAL_USER -c "mkdir -p '$MOODLE_DIR'"
         print_status "✓ Created directory: $MOODLE_DIR"
     else
         print_status "✓ Directory already exists: $MOODLE_DIR"
@@ -880,7 +881,7 @@ if ! check_moodle_downloaded; then
         echo "  ✓ Found: $MOODLE_DIR/html/version.php"
     else
         print_status "Cloning Moodle repository (this may take several minutes)..."
-        su - $ACTUAL_USER -c "cd $MOODLE_DIR && git clone -b $MOODLE_VERSION git://git.moodle.org/moodle.git html"
+        su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && git clone -b $MOODLE_VERSION git://git.moodle.org/moodle.git html"
         print_status "✓ Moodle repository cloned"
     fi
     
@@ -910,7 +911,7 @@ if ! check_moodle_ddev_configured; then
         print_status "✓ DDEV config already exists: $MOODLE_DIR/.ddev/config.yaml"
     else
         print_status "Creating DDEV configuration..."
-        su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev config --project-type=php \
+        su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev config --project-type=php \
             --docroot=html \
             --php-version=$MOODLE_PHP_VERSION \
             --database=mysql:$MOODLE_MYSQL_VERSION \
@@ -1008,11 +1009,11 @@ if ! check_moodle_ddev_running; then
     print_step "Starting Moodle DDEV..."
     
     # Check if already running
-    if su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev describe >/dev/null 2>&1"; then
+    if su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev describe >/dev/null 2>&1"; then
         print_status "DDEV already running, restarting to apply MySQL config..."
-        su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev restart"
+        su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev restart"
     else
-        su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev start"
+        su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev start"
     fi
     
     # Wait for database to initialize
@@ -1020,11 +1021,11 @@ if ! check_moodle_ddev_running; then
     sleep 5
     
     # Verify DDEV is running
-    if su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev describe >/dev/null 2>&1"; then
+    if su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev describe >/dev/null 2>&1"; then
         # Verify MySQL settings
         print_step "Verifying MySQL configuration..."
-        LARGE_PREFIX=$(su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev mysql -N -e \"SHOW VARIABLES LIKE 'innodb_large_prefix';\" | awk '{print \$2}'")
-        FILE_FORMAT=$(su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev mysql -N -e \"SHOW VARIABLES LIKE 'innodb_file_format';\" | awk '{print \$2}'")
+        LARGE_PREFIX=$(su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev mysql -N -e \"SHOW VARIABLES LIKE 'innodb_large_prefix';\" | awk '{print \$2}'")
+        FILE_FORMAT=$(su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev mysql -N -e \"SHOW VARIABLES LIKE 'innodb_file_format';\" | awk '{print \$2}'")
         
         print_status "innodb_large_prefix: $LARGE_PREFIX"
         print_status "innodb_file_format: $FILE_FORMAT"
@@ -1043,9 +1044,9 @@ if ! check_moodle_ddev_running; then
 else
     print_status "✓ Moodle DDEV already started (skipping)"
     # Verify it's still running
-    if ! su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev describe >/dev/null 2>&1"; then
+    if ! su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev describe >/dev/null 2>&1"; then
         print_warning "DDEV was marked as started but is not running. Restarting..."
-        su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev start"
+        su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev start"
         sleep 5
     fi
 fi
@@ -1055,8 +1056,8 @@ if ! check_moodle_data_exists; then
     print_step "Creating Moodle data directory..."
     
     if [ ! -d "$MOODLE_DIR/moodledata" ]; then
-        su - $ACTUAL_USER -c "mkdir -p $MOODLE_DIR/moodledata"
-        su - $ACTUAL_USER -c "chmod 777 $MOODLE_DIR/moodledata"
+        su - $ACTUAL_USER -c "mkdir -p '$MOODLE_DIR/moodledata'"
+        su - $ACTUAL_USER -c "chmod 777 '$MOODLE_DIR/moodledata'"
         print_status "Created moodledata directory"
     else
         print_status "moodledata directory already exists"
@@ -1083,7 +1084,7 @@ if ! check_moodle_installed; then
         print_status "config.php exists, checking if Moodle is installed..."
         
         # Try to check Moodle status
-        if su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev exec php html/admin/cli/maintenance.php --help >/dev/null 2>&1"; then
+        if su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev exec php html/admin/cli/maintenance.php --help >/dev/null 2>&1"; then
             print_status "Moodle appears to be installed"
             # Moodle installation complete
             print_status "✓ Moodle installation verified"
@@ -1105,7 +1106,7 @@ if ! check_moodle_installed; then
         # Try normal installation first
         print_status "Attempting Moodle installation..."
         
-        if su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev exec php html/admin/cli/install.php \
+        if su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev exec php html/admin/cli/install.php \
             --lang=en \
             --wwwroot='$MOODLE_URL' \
             --dataroot='/var/www/html/moodledata' \
@@ -1133,7 +1134,7 @@ if ! check_moodle_installed; then
                 print_warning "Attempting installation with database skip..."
                 
                 # Try with skip-database option
-                if su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev exec php html/admin/cli/install.php \
+                if su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev exec php html/admin/cli/install.php \
                     --lang=en \
                     --wwwroot='$MOODLE_URL' \
                     --dataroot='/var/www/html/moodledata' \
@@ -1155,7 +1156,7 @@ if ! check_moodle_installed; then
                     
                     # Now run the database upgrade to complete installation
                     print_step "Completing database setup..."
-                    su - $ACTUAL_USER -c "cd $MOODLE_DIR && ddev exec php html/admin/cli/upgrade.php --non-interactive"
+                    su - $ACTUAL_USER -c "cd '$MOODLE_DIR' && ddev exec php html/admin/cli/upgrade.php --non-interactive"
                 else
                     print_error "Moodle installation failed. Check logs at /tmp/moodle_install.log"
                     print_warning "You may complete installation via web interface at: $MOODLE_URL"
@@ -1187,13 +1188,13 @@ if ! check_simple_oauth_installed; then
     print_step "Checking if Simple OAuth module is installed..."
     
     # Check if already enabled
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q simple_oauth"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module --status=enabled 2>/dev/null | grep -q simple_oauth"; then
         print_status "✓ Simple OAuth already installed and enabled (skipping)"
     else
         # Check if module exists but is not enabled
-        if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module 2>/dev/null | grep -q simple_oauth"; then
+        if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module 2>/dev/null | grep -q simple_oauth"; then
             print_status "Simple OAuth module found but not enabled - enabling..."
-            su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush en simple_oauth -y"
+            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush en simple_oauth -y"
             print_status "✓ Simple OAuth enabled"
         else
             # Module not found, need to install it
@@ -1209,11 +1210,11 @@ if ! check_simple_oauth_installed; then
             # Check if it's already in composer.json (might be included by OpenSocial)
             if grep -q "drupal/simple_oauth" "$OPENSOCIAL_DIR/composer.json" 2>/dev/null; then
                 print_status "Simple OAuth is in composer.json, running composer install..."
-                su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer install $COMPOSER_FLAGS"
+                su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer install $COMPOSER_FLAGS"
             else
                 # Add it - use version ^6.0 to match OpenSocial's graphql_oauth dependency
                 print_status "Adding Simple OAuth ^6.0 to match OpenSocial dependencies..."
-                if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require 'drupal/simple_oauth:^6.0' --with-all-dependencies $COMPOSER_FLAGS"; then
+                if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer require 'drupal/simple_oauth:^6.0' --with-all-dependencies $COMPOSER_FLAGS"; then
                     print_status "✓ Simple OAuth installed via Composer"
                 else
                     print_error "Failed to install Simple OAuth"
@@ -1224,13 +1225,13 @@ if ! check_simple_oauth_installed; then
             
             # Enable the module after installation
             print_status "Enabling Simple OAuth module..."
-            su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush en simple_oauth -y"
+            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush en simple_oauth -y"
             print_status "✓ Simple OAuth enabled"
         fi
     fi
     
     # Verify installation
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled | grep -q simple_oauth"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module --status=enabled | grep -q simple_oauth"; then
         # Simple OAuth installed
         print_status "✓ Simple OAuth module installed and verified"
     else
@@ -1256,24 +1257,24 @@ if ! check_oauth_keys_exist; then
     else
         if [ ! -d "$OAUTH_KEYS_DIR" ]; then
             print_status "Creating keys directory..."
-            su - $ACTUAL_USER -c "mkdir -p $OAUTH_KEYS_DIR"
-            su - $ACTUAL_USER -c "chmod 700 $OAUTH_KEYS_DIR"
+            su - $ACTUAL_USER -c "mkdir -p '$OAUTH_KEYS_DIR'"
+            su - $ACTUAL_USER -c "chmod 755 '$OAUTH_KEYS_DIR'"  # Changed from 700 to 755 for container access
             print_status "✓ Created: $OAUTH_KEYS_DIR"
         fi
         
         # Generate private key if it doesn't exist
         if [ ! -f "$OAUTH_KEYS_DIR/private.key" ]; then
             print_status "Generating RSA private key (2048 bit)..."
-            su - $ACTUAL_USER -c "openssl genrsa -out $OAUTH_KEYS_DIR/private.key 2048"
-            su - $ACTUAL_USER -c "chmod 600 $OAUTH_KEYS_DIR/private.key"
+            su - $ACTUAL_USER -c "openssl genrsa -out '$OAUTH_KEYS_DIR/private.key' 2048"
+            su - $ACTUAL_USER -c "chmod 600 '$OAUTH_KEYS_DIR/private.key'"
             print_status "✓ Created: $OAUTH_KEYS_DIR/private.key (permissions: 600)"
         fi
         
         # Generate public key if it doesn't exist
         if [ ! -f "$OAUTH_KEYS_DIR/public.key" ]; then
             print_status "Extracting public key from private key..."
-            su - $ACTUAL_USER -c "openssl rsa -in $OAUTH_KEYS_DIR/private.key -pubout -out $OAUTH_KEYS_DIR/public.key"
-            su - $ACTUAL_USER -c "chmod 644 $OAUTH_KEYS_DIR/public.key"
+            su - $ACTUAL_USER -c "openssl rsa -in '$OAUTH_KEYS_DIR/private.key' -pubout -out '$OAUTH_KEYS_DIR/public.key'"
+            su - $ACTUAL_USER -c "chmod 644 '$OAUTH_KEYS_DIR/public.key'"
             print_status "✓ Created: $OAUTH_KEYS_DIR/public.key (permissions: 644)"
         fi
     fi
@@ -1286,7 +1287,7 @@ if ! check_oauth_keys_exist; then
         echo "  📊 Key details:"
         echo "     🔑 Private: $OAUTH_KEYS_DIR/private.key (2048 bit RSA)"
         echo "     🔓 Public:  $OAUTH_KEYS_DIR/public.key"
-        echo "     🔒 Directory permissions: 700"
+        echo "     🔒 Directory permissions: 755"
         echo "     🔒 Private key permissions: 600"
         echo "     📖 Public key permissions: 644"
     else
@@ -1306,32 +1307,76 @@ fi
 if ! check_oauth_configured; then
     print_step "Configuring Simple OAuth..."
     
-    EXPECTED_PUBLIC="/var/www/html/../keys/public.key"
-    EXPECTED_PRIVATE="/var/www/html/../keys/private.key"
+    # DDEV mounts the project at /var/www, so keys are at /var/www/keys
+    EXPECTED_PUBLIC="/var/www/keys/public.key"
+    EXPECTED_PRIVATE="/var/www/keys/private.key"
     
     # Verify keys are accessible from container first
     print_status "Verifying keys are accessible from DDEV container..."
-    if ! su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev exec test -f $EXPECTED_PUBLIC"; then
-        print_error "Public key not accessible from container at: $EXPECTED_PUBLIC"
-        print_error "Check that keys directory exists and has proper permissions"
+    
+    # First check if keys exist on the host
+    if [ ! -f "$OPENSOCIAL_DIR/keys/public.key" ]; then
+        print_error "Public key not found on host at: $OPENSOCIAL_DIR/keys/public.key"
+        print_error "Keys generation may have failed"
         exit 1
     fi
     
-    print_status "✓ Keys are accessible from container"
+    # Test access from within container with proper quoting
+    if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev exec 'test -f $EXPECTED_PUBLIC' 2>/dev/null"; then
+        print_warning "Keys not immediately accessible in container, trying to refresh..."
+        
+        # Sometimes DDEV needs a moment to sync filesystem changes
+        sleep 2
+        
+        # Try again
+        if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev exec 'test -f $EXPECTED_PUBLIC' 2>/dev/null"; then
+            # Fall back to relative paths which should always work
+            print_warning "Using relative paths for Simple OAuth configuration"
+            EXPECTED_PUBLIC="../keys/public.key"
+            EXPECTED_PRIVATE="../keys/private.key"
+            
+            # Verify the relative path works
+            if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev exec 'test -f /var/www/html/$EXPECTED_PUBLIC' 2>/dev/null"; then
+                print_error "Cannot access keys from container. Trying container restart..."
+                su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev restart" >/dev/null 2>&1
+                sleep 5
+                
+                # Final attempt
+                if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev exec 'test -f /var/www/keys/public.key' 2>/dev/null"; then
+                    print_error "Keys not accessible from container after restart"
+                    print_error "Manual configuration may be required"
+                    print_warning "You can continue and configure Simple OAuth manually at:"
+                    print_warning "$OPENSOCIAL_URL/admin/config/people/simple_oauth"
+                    print_warning "Use these paths:"
+                    print_warning "  Public Key: /var/www/keys/public.key"
+                    print_warning "  Private Key: /var/www/keys/private.key"
+                else
+                    # Reset to absolute paths after restart worked
+                    EXPECTED_PUBLIC="/var/www/keys/public.key"
+                    EXPECTED_PRIVATE="/var/www/keys/private.key"
+                    print_status "✓ Keys accessible after container restart"
+                fi
+            fi
+        else
+            print_status "✓ Keys are accessible from container"
+        fi
+    else
+        print_status "✓ Keys are accessible from container"
+    fi
     
     # Try multiple configuration methods
     print_status "Attempting configuration method 1: Standard config:set..."
     
     # Method 1: Try standard config:set
     CONFIG_SUCCESS=false
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:set simple_oauth.settings public_key '$EXPECTED_PUBLIC' -y 2>&1" | grep -q "success\|saved"; then
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:set simple_oauth.settings private_key '$EXPECTED_PRIVATE' -y"
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush config:set simple_oauth.settings public_key '$EXPECTED_PUBLIC' -y 2>&1" | grep -q "success\|saved"; then
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush config:set simple_oauth.settings private_key '$EXPECTED_PRIVATE' -y"
         CONFIG_SUCCESS=true
         print_status "✓ Configuration method 1 successful"
     else
         # Method 2: Try PHP eval
         print_status "Method 1 failed, trying method 2: PHP eval..."
-        if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush php-eval \"
+        if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush php-eval \"
 \\\$config = \\Drupal::service('config.factory')->getEditable('simple_oauth.settings');
 \\\$config->set('public_key', '$EXPECTED_PUBLIC');
 \\\$config->set('private_key', '$EXPECTED_PRIVATE');
@@ -1347,11 +1392,11 @@ echo 'Configuration saved';
     
     # Clear cache regardless
     print_status "Clearing Drupal cache..."
-    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush cr"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush cr"
     
     # Verify configuration
     print_status "Verifying Simple OAuth configuration..."
-    VERIFY_OUTPUT=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush config:get simple_oauth.settings 2>&1" || echo "ERROR")
+    VERIFY_OUTPUT=$(su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush config:get simple_oauth.settings 2>&1" || echo "ERROR")
     
     # Check if configuration exists and has key paths
     if echo "$VERIFY_OUTPUT" | grep -q "public_key.*keys" || echo "$VERIFY_OUTPUT" | grep -q "public_key_path"; then
@@ -1369,7 +1414,7 @@ echo 'Configuration saved';
     fi
     
     # Additional verification: Test key access
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev exec cat $EXPECTED_PUBLIC | head -n 1 2>/dev/null" | grep -q "BEGIN PUBLIC KEY"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev exec cat $EXPECTED_PUBLIC | head -n 1 2>/dev/null" | grep -q "BEGIN PUBLIC KEY"; then
         print_status "✓ Public key is readable from container"
     else
         print_warning "Unable to read public key from container"
@@ -1396,8 +1441,8 @@ if ! check_oauth_provider_module_exists; then
         echo "  ✓ Found: $MODULE_DIR/opensocial_oauth_provider.info.yml"
     else
         print_status "Creating module directory structure..."
-        su - $ACTUAL_USER -c "mkdir -p $MODULE_DIR/src/Controller"
-        su - $ACTUAL_USER -c "mkdir -p $MODULE_DIR/src/Form"
+        su - $ACTUAL_USER -c "mkdir -p '$MODULE_DIR/src/Controller'"
+        su - $ACTUAL_USER -c "mkdir -p '$MODULE_DIR/src/Form'"
         
         # Create module info file
         print_status "Creating module info file..."
@@ -1662,18 +1707,18 @@ if ! check_oauth_provider_enabled; then
     print_step "Enabling OpenSocial OAuth Provider module..."
     
     # Check if module is already enabled
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled | grep -q opensocial_oauth_provider"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module --status=enabled | grep -q opensocial_oauth_provider"; then
         print_status "OpenSocial OAuth Provider already enabled"
     else
         # Enable the module
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush en opensocial_oauth_provider -y"
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush en opensocial_oauth_provider -y"
     fi
     
     # Clear cache
-    su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush cr"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush cr"
     
     # Verify module is enabled
-    if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush pm:list --type=module --status=enabled | grep -q opensocial_oauth_provider"; then
+    if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:list --type=module --status=enabled | grep -q opensocial_oauth_provider"; then
         # OAuth provider module enabled
         print_status "✓ OAuth Provider module enabled and verified"
     else
@@ -1688,7 +1733,7 @@ if ! check_oauth_client_exists; then
     print_step "Creating OAuth client for Moodle..."
     
     # Check if client already exists
-    CLIENT_EXISTS=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush php-eval \"
+    CLIENT_EXISTS=$(su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush php-eval \"
 \\$clients = \\Drupal\\consumers\\Entity\\Consumer::loadMultiple();
 foreach (\\$clients as \\$client) {
   if (\\$client->get('client_id')->value == '$OAUTH_CLIENT_ID') {
@@ -1703,7 +1748,7 @@ echo 'NOT_FOUND';
         print_status "OAuth client already exists"
     else
         # Create OAuth consumer via Drush
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush php-eval \"
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush php-eval \"
 \\$client = \\Drupal\\consumers\\Entity\\Consumer::create([
   'label' => 'Moodle LMS',
   'client_id' => '$OAUTH_CLIENT_ID',
@@ -1719,7 +1764,7 @@ echo 'OAuth client created successfully';
     fi
     
     # Verify client exists
-    CLIENT_CHECK=$(su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush php-eval \"
+    CLIENT_CHECK=$(su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush php-eval \"
 \\$clients = \\Drupal\\consumers\\Entity\\Consumer::loadMultiple();
 foreach (\\$clients as \\$client) {
   if (\\$client->get('client_id')->value == '$OAUTH_CLIENT_ID') {
