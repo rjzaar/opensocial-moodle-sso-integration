@@ -7,6 +7,51 @@
 # Modified to store files in script directory and check for URL conflicts
 ################################################################################
 
+# Show usage information
+show_usage() {
+    cat << EOF
+Usage: sudo bash $0 [OPTIONS]
+
+OpenSocial + Moodle SSO Integration Installation Script
+
+OPTIONS:
+    --defaults, -d    Run with default options (non-interactive mode)
+                      Default admin email: admin@example.com
+    
+    --help, -h        Show this help message
+
+EXAMPLES:
+    # Interactive mode (prompts for admin email)
+    sudo bash $0
+    
+    # Non-interactive mode with defaults
+    sudo bash $0 --defaults
+
+CONFIGURATION:
+    All files will be stored in: $(dirname "${BASH_SOURCE[0]}")
+    
+    Default settings:
+    - Admin email: admin@example.com
+    - Admin username: admin
+    - Admin password: admin
+    - OpenSocial URL: https://opensocial.ddev.site (or opensocial1, opensocial2, etc.)
+    - Moodle URL: https://moodle.ddev.site (or moodle1, moodle2, etc.)
+
+NOTES:
+    - Script must be run with sudo/root privileges
+    - URLs will auto-increment if conflicts detected (opensocial -> opensocial1 -> opensocial2)
+    - Script is idempotent - safe to run multiple times
+    - Checks actual system state, not checkpoint files
+
+EOF
+}
+
+# Check for help flag
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    show_usage
+    exit 0
+fi
+
 set -e  # Exit on any error
 
 # Color codes for output
@@ -96,6 +141,14 @@ print_warning "Both systems run in DDEV containers (no port conflicts!)"
 print_warning "Files will be stored in: $SCRIPT_DIR"
 echo ""
 
+# Check for --defaults flag
+USE_DEFAULTS=false
+if [ "$1" = "--defaults" ] || [ "$1" = "-d" ]; then
+    USE_DEFAULTS=true
+    print_status "Running with default options (non-interactive mode)"
+    echo ""
+fi
+
 # Configuration variables
 print_section "Configuration"
 
@@ -118,8 +171,14 @@ MOODLE_PHP_VERSION="8.1"
 MOODLE_MYSQL_VERSION="8.0"
 MOODLE_VERSION="MOODLE_404_STABLE"
 
-read -p "Enter admin email: " ADMIN_EMAIL
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+# Admin email configuration
+if [ "$USE_DEFAULTS" = true ]; then
+    ADMIN_EMAIL="admin@example.com"
+    print_status "Using default admin email: $ADMIN_EMAIL"
+else
+    read -p "Enter admin email [admin@example.com]: " ADMIN_EMAIL
+    ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+fi
 
 # OAuth Configuration
 OAUTH_CLIENT_ID=$(cat /proc/sys/kernel/random/uuid)
@@ -128,11 +187,11 @@ OAUTH_CLIENT_SECRET=$(openssl rand -hex 32)
 # Site configurations
 OPENSOCIAL_SITE_NAME="OpenSocial Community"
 OPENSOCIAL_ADMIN_USER="admin"
-OPENSOCIAL_ADMIN_PASS="Admin@123"
+OPENSOCIAL_ADMIN_PASS="admin"
 OPENSOCIAL_URL="https://${OPENSOCIAL_PROJECT}.ddev.site"
 
 MOODLE_ADMIN_USER="admin"
-MOODLE_ADMIN_PASS="Admin@123"
+MOODLE_ADMIN_PASS="admin"
 MOODLE_URL="https://${MOODLE_PROJECT}.ddev.site"
 
 print_status "Configuration set:"
