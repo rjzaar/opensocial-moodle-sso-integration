@@ -1,5 +1,0 @@
-entity.workflow_list.add_form:
-  route_name: entity.workflow_list.add_form
-  title: 'Add Workflow List'
-  appears_on:
-    - entity.workflow_list.collection
