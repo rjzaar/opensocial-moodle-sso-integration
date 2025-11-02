@@ -1,0 +1,56 @@
+entity.workflow_list.collection:
+  path: '/admin/structure/workflow-list'
+  defaults:
+    _entity_list: 'workflow_list'
+    _title: 'Workflow Lists'
+  requirements:
+    _permission: 'administer workflow lists'
+
+entity.workflow_list.add_form:
+  path: '/admin/structure/workflow-list/add'
+  defaults:
+    _entity_form: 'workflow_list.add'
+    _title: 'Add Workflow List'
+  requirements:
+    _permission: 'administer workflow lists'
+
+entity.workflow_list.edit_form:
+  path: '/admin/structure/workflow-list/{workflow_list}/edit'
+  defaults:
+    _entity_form: 'workflow_list.edit'
+    _title: 'Edit Workflow List'
+  requirements:
+    _permission: 'administer workflow lists'
+
+entity.workflow_list.delete_form:
+  path: '/admin/structure/workflow-list/{workflow_list}/delete'
+  defaults:
+    _entity_form: 'workflow_list.delete'
+    _title: 'Delete Workflow List'
+  requirements:
+    _permission: 'administer workflow lists'
+
+entity.workflow_list.quick_edit_form:
+  path: '/admin/structure/workflow-list/{workflow_list}/quick-edit'
+  defaults:
+    _form: '\Drupal\workflow_assignment\Form\QuickEditWorkflowForm'
+    _title: 'Quick Edit Workflow'
+  requirements:
+    _permission: 'administer workflow lists'
+
+workflow_assignment.settings:
+  path: '/admin/config/workflow/workflow-assignment'
+  defaults:
+    _form: '\Drupal\workflow_assignment\Form\SettingsForm'
+    _title: 'Workflow Assignment Settings'
+  requirements:
+    _permission: 'administer workflow lists'
+
+workflow_assignment.node_assign:
+  path: '/node/{node}/assign-workflow'
+  defaults:
+    _form: '\Drupal\workflow_assignment\Form\NodeAssignWorkflowForm'
+    _title: 'Assign Workflow'
+  requirements:
+    _permission: 'assign workflow lists to content'
+    _entity_access: 'node.update'

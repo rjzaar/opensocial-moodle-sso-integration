@@ -1,0 +1,117 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the workflow_assignment module.
+ */
+
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\taxonomy\Entity\Vocabulary;
+
+/**
+ * Implements hook_install().
+ */
+function workflow_assignment_install() {
+  // Create resource_locations vocabulary if it doesn't exist
+  if (!Vocabulary::load('resource_locations')) {
+    $vocabulary = Vocabulary::create([
+      'vid' => 'resource_locations',
+      'name' => 'Resource Locations',
+      'description' => 'Resource location tags for workflow assignments',
+    ]);
+    $vocabulary->save();
+  }
+
+  // Create workflow_list field storage
+  if (!FieldStorageConfig::loadByName('node', 'field_workflow_list')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_workflow_list',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'workflow_list',
+      ],
+      'cardinality' => 1,
+    ])->save();
+  }
+
+  \Drupal::messenger()->addStatus(t('Workflow Assignment module has been installed. Configure enabled content types at <a href=":url">Configuration > Workflow > Workflow Assignment</a>.', [
+    ':url' => '/admin/config/workflow/workflow-assignment',
+  ]));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function workflow_assignment_uninstall() {
+  // Remove workflow_list field from all content types
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_workflow_list');
+  if ($field_storage) {
+    $field_storage->delete();
+  }
+
+  // Note: We keep the resource_locations vocabulary as it may contain user data
+}
+
+/**
+ * Helper function to add workflow field to a content type.
+ */
+function workflow_assignment_add_field_to_content_type($content_type) {
+  $field_name = 'field_workflow_list';
+  
+  // Check if field already exists on this content type
+  if (FieldConfig::loadByName('node', $content_type, $field_name)) {
+    return;
+  }
+
+  // Create field instance
+  FieldConfig::create([
+    'field_name' => $field_name,
+    'entity_type' => 'node',
+    'bundle' => $content_type,
+    'label' => 'Workflow List',
+    'required' => FALSE,
+    'settings' => [
+      'handler' => 'default',
+      'handler_settings' => [
+        'target_bundles' => NULL,
+      ],
+    ],
+  ])->save();
+
+  // Set form display
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.' . $content_type . '.default');
+    
+  if ($form_display) {
+    $form_display->setComponent($field_name, [
+      'type' => 'options_select',
+      'weight' => 10,
+    ])->save();
+  }
+
+  // Set view display
+  $view_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_view_display')
+    ->load('node.' . $content_type . '.default');
+    
+  if ($view_display) {
+    $view_display->setComponent($field_name, [
+      'type' => 'entity_reference_label',
+      'weight' => 10,
+      'label' => 'above',
+    ])->save();
+  }
+}
+
+/**
+ * Helper function to remove workflow field from a content type.
+ */
+function workflow_assignment_remove_field_from_content_type($content_type) {
+  $field = FieldConfig::loadByName('node', $content_type, 'field_workflow_list');
+  if ($field) {
+    $field->delete();
+  }
+}

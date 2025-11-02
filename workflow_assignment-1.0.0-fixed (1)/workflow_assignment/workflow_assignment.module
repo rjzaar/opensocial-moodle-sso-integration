@@ -1,0 +1,132 @@
+<?php
+
+/**
+ * @file
+ * Main module file for workflow_assignment.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function workflow_assignment_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.workflow_assignment':
+      $output = '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Workflow Assignment module provides a flexible workflow system where you can create workflow lists containing assigned users and/or groups, with resource locations designated by taxonomy tags.') . '</p>';
+      $output .= '<h3>' . t('Uses') . '</h3>';
+      $output .= '<dl>';
+      $output .= '<dt>' . t('Creating Workflow Lists') . '</dt>';
+      $output .= '<dd>' . t('Navigate to Structure > Workflow Lists to create and manage workflow lists. You can assign users, groups, and resource location tags to each workflow.') . '</dd>';
+      $output .= '<dt>' . t('Assigning Workflows to Content') . '</dt>';
+      $output .= '<dd>' . t('Once a content type is enabled in the settings, you can assign workflow lists to content either from the edit form or using the "Assign Workflow" tab.') . '</dd>';
+      $output .= '<dt>' . t('Configuration') . '</dt>';
+      $output .= '<dd>' . t('Configure the module at Configuration > Workflow > Workflow Assignment to enable content types and select the resource location vocabulary.') . '</dd>';
+      $output .= '</dl>';
+      return $output;
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function workflow_assignment_theme() {
+  return [
+    'workflow_info' => [
+      'variables' => [
+        'workflow' => NULL,
+        'users' => [],
+        'groups' => [],
+        'resources' => [],
+      ],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_view().
+ */
+function workflow_assignment_node_view(array &$build, EntityInterface $entity, EntityViewDisplayInterface $display, $view_mode) {
+  // Only show workflow info if user has permission
+  if (!\Drupal::currentUser()->hasPermission('view workflow list assignments')) {
+    return;
+  }
+
+  // Check if node has workflow assigned
+  if (!$entity->hasField('field_workflow_list') || $entity->get('field_workflow_list')->isEmpty()) {
+    return;
+  }
+
+  $workflow_id = $entity->get('field_workflow_list')->target_id;
+  $workflow = \Drupal::entityTypeManager()
+    ->getStorage('workflow_list')
+    ->load($workflow_id);
+
+  if (!$workflow) {
+    return;
+  }
+
+  // Load users
+  $users = [];
+  $user_ids = $workflow->getAssignedUsers();
+  if (!empty($user_ids)) {
+    $user_entities = \Drupal::entityTypeManager()
+      ->getStorage('user')
+      ->loadMultiple($user_ids);
+    foreach ($user_entities as $user) {
+      $users[] = $user->getDisplayName();
+    }
+  }
+
+  // Load groups
+  $groups = [];
+  if (\Drupal::moduleHandler()->moduleExists('group')) {
+    $group_ids = $workflow->getAssignedGroups();
+    if (!empty($group_ids)) {
+      $group_entities = \Drupal::entityTypeManager()
+        ->getStorage('group')
+        ->loadMultiple($group_ids);
+      foreach ($group_entities as $group) {
+        $groups[] = $group->label();
+      }
+    }
+  }
+
+  // Load resource tags
+  $resources = [];
+  $tag_ids = $workflow->getResourceTags();
+  if (!empty($tag_ids)) {
+    $term_entities = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_term')
+      ->loadMultiple($tag_ids);
+    foreach ($term_entities as $term) {
+      $resources[] = $term->getName();
+    }
+  }
+
+  // Add workflow info section
+  $build['workflow_info'] = [
+    '#theme' => 'workflow_info',
+    '#workflow' => $workflow,
+    '#users' => $users,
+    '#groups' => $groups,
+    '#resources' => $resources,
+    '#weight' => 10,
+  ];
+}
+
+/**
+ * Prepares variables for workflow info template.
+ */
+function template_preprocess_workflow_info(&$variables) {
+  $workflow = $variables['workflow'];
+  
+  $variables['workflow_label'] = $workflow->label();
+  $variables['workflow_description'] = $workflow->getDescription();
+  $variables['has_users'] = !empty($variables['users']);
+  $variables['has_groups'] = !empty($variables['groups']);
+  $variables['has_resources'] = !empty($variables['resources']);
+}

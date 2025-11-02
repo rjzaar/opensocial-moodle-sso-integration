@@ -562,10 +562,17 @@ fi
 if ! check_opensocial_composer_installed; then
     print_step "Installing OpenSocial via Composer..."
     
+    # Set composer flags based on mode
+    COMPOSER_FLAGS=""
+    if [ "$USE_DEFAULTS" = true ]; then
+        COMPOSER_FLAGS="--no-interaction"
+        print_status "Using non-interactive mode for Composer"
+    fi
+    
     # Check if composer.json already exists
     if [ -f "$OPENSOCIAL_DIR/composer.json" ]; then
         print_status "composer.json already exists, running composer install..."
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer install"
+        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer install $COMPOSER_FLAGS"
     else
         if [ "$OPENSOCIAL_VERSION" = "dev-master" ]; then
             su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer create-project goalgorilla/social_template:dev-master . --no-interaction --stability dev"
@@ -577,7 +584,7 @@ if ! check_opensocial_composer_installed; then
     # Install Drush if not already installed
     if ! su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev drush --version >/dev/null 2>&1"; then
         print_status "Installing Drush..."
-        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require drush/drush --dev"
+        su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require drush/drush --dev $COMPOSER_FLAGS"
     else
         print_status "Drush already installed"
     fi
@@ -1077,14 +1084,21 @@ if ! check_simple_oauth_installed; then
             # Module not found, need to install it
             print_status "Simple OAuth not found - installing via Composer..."
             
+            # Set composer flags based on mode
+            COMPOSER_FLAGS=""
+            if [ "$USE_DEFAULTS" = true ]; then
+                COMPOSER_FLAGS="--no-interaction"
+                print_status "Using non-interactive mode for Composer"
+            fi
+            
             # Check if it's already in composer.json (might be included by OpenSocial)
             if grep -q "drupal/simple_oauth" "$OPENSOCIAL_DIR/composer.json" 2>/dev/null; then
                 print_status "Simple OAuth is in composer.json, running composer install..."
-                su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer install"
+                su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer install $COMPOSER_FLAGS"
             else
                 # Add it - use version ^6.0 to match OpenSocial's graphql_oauth dependency
                 print_status "Adding Simple OAuth ^6.0 to match OpenSocial dependencies..."
-                if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require 'drupal/simple_oauth:^6.0' --with-all-dependencies"; then
+                if su - $ACTUAL_USER -c "cd $OPENSOCIAL_DIR && ddev composer require 'drupal/simple_oauth:^6.0' --with-all-dependencies $COMPOSER_FLAGS"; then
                     print_status "✓ Simple OAuth installed via Composer"
                 else
                     print_error "Failed to install Simple OAuth"

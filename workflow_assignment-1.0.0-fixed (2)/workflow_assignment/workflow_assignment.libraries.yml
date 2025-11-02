@@ -1,0 +1,4 @@
+workflow_info:
+  css:
+    theme:
+      css/workflow_assignment.css: {}

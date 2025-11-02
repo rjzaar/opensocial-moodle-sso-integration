@@ -1,0 +1,5 @@
+workflow_assignment.node_assign:
+  route_name: workflow_assignment.node_assign
+  title: 'Assign Workflow'
+  base_route: entity.node.canonical
+  weight: 10

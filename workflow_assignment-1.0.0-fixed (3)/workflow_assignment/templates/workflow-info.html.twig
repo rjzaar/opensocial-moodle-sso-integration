@@ -1,0 +1,66 @@
+{#
+/**
+ * @file
+ * Default theme implementation for workflow information display.
+ *
+ * Available variables:
+ * - workflow_label: The name of the workflow.
+ * - workflow_description: The description of the workflow.
+ * - users: Array of assigned user names.
+ * - groups: Array of assigned group names.
+ * - resources: Array of resource location names.
+ * - has_users: Boolean indicating if there are assigned users.
+ * - has_groups: Boolean indicating if there are assigned groups.
+ * - has_resources: Boolean indicating if there are resource locations.
+ *
+ * @ingroup themeable
+ */
+#}
+<div class="workflow-info">
+  <h3>{{ 'Workflow Information'|t }}</h3>
+  
+  <div class="workflow-info__content">
+    <div class="workflow-info__item">
+      <strong>{{ 'Workflow:'|t }}</strong> {{ workflow_label }}
+    </div>
+    
+    {% if workflow_description %}
+      <div class="workflow-info__item">
+        <strong>{{ 'Description:'|t }}</strong> {{ workflow_description }}
+      </div>
+    {% endif %}
+    
+    {% if has_users %}
+      <div class="workflow-info__item">
+        <strong>{{ 'Assigned Users:'|t }}</strong>
+        <ul class="workflow-info__list">
+          {% for user in users %}
+            <li>{{ user }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    
+    {% if has_groups %}
+      <div class="workflow-info__item">
+        <strong>{{ 'Assigned Groups:'|t }}</strong>
+        <ul class="workflow-info__list">
+          {% for group in groups %}
+            <li>{{ group }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    
+    {% if has_resources %}
+      <div class="workflow-info__item">
+        <strong>{{ 'Resource Locations:'|t }}</strong>
+        <ul class="workflow-info__list">
+          {% for resource in resources %}
+            <li>{{ resource }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+</div>
