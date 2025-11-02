@@ -1,11 +1,4 @@
 # OpenSocial + Moodle SSO Installation Configuration
-# 
-# This file contains default values for the installation script.
-# Modify these values to customize your installation.
-#
-# Usage:
-#   sudo bash opensocial_moodle_sso_complete_modified.sh --defaults
-#   (will use values from this config.yml file)
 
 # Admin Account Configuration
 admin:
@@ -15,31 +8,29 @@ admin:
 
 # OpenSocial (Drupal) Configuration
 opensocial:
-  project_name: "opensocial"          # DDEV project name (will auto-increment if exists)
+  project_name: "opensocial"
   site_name: "OpenSocial Community"
-  version: "dev-master"               # or specific version like "12.4.2"
+  version: "dev-master"
   php_version: "8.2"
   mysql_version: "8.0"
   nodejs_version: "18"
 
 # Moodle Configuration
 moodle:
-  project_name: "moodle"              # DDEV project name (will auto-increment if exists)
+  project_name: "moodle"
   fullname: "Moodle LMS"
   shortname: "Moodle"
-  version: "MOODLE_404_STABLE"        # Git branch/tag (e.g., MOODLE_405_STABLE)
+  version: "MOODLE_404_STABLE"
   php_version: "8.1"
   mysql_version: "8.0"
 
 # OAuth Configuration
-# Note: Client ID and Secret are auto-generated for security
-# These values are saved in opensocial_moodle_ddev_credentials.txt after installation
 oauth:
-  auto_generate: true                 # Always generate new credentials for security
+  auto_generate: true
 
 # Advanced Options
 advanced:
-  skip_system_update: false           # Set to true to skip apt update/upgrade
-  composer_timeout: 600               # Composer timeout in seconds
-  ddev_router_http_port: "80"         # HTTP port for DDEV router
-  ddev_router_https_port: "443"       # HTTPS port for DDEV router
+  skip_system_update: false
+  composer_timeout: 600
+  ddev_router_http_port: "80"
+  ddev_router_https_port: "443"
