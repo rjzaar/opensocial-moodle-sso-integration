@@ -16,7 +16,8 @@ OpenSocial + Moodle SSO Integration Installation Script
 
 OPTIONS:
     --defaults, -d    Run with default options (non-interactive mode)
-                      Default admin email: admin@example.com
+                      Uses values from config.yml if present
+                      Falls back to hardcoded defaults if config.yml missing
     
     --help, -h        Show this help message
 
@@ -24,24 +25,40 @@ EXAMPLES:
     # Interactive mode (prompts for admin email)
     sudo bash $0
     
-    # Non-interactive mode with defaults
+    # Non-interactive mode with config.yml
     sudo bash $0 --defaults
+    
+    # Non-interactive mode with environment variable override
+    OPENSOCIAL_PROJECT=mysite sudo bash $0 --defaults
 
 CONFIGURATION:
     All files will be stored in: $(dirname "${BASH_SOURCE[0]}")
     
-    Default settings:
+    Configuration file: config.yml (optional)
+    - Create config.yml in the script directory to customize settings
+    - Only used when running with --defaults flag
+    - See CONFIG_GUIDE.md for full configuration options
+    
+    Default settings (when config.yml not present):
     - Admin email: admin@example.com
     - Admin username: admin
-    - Admin password: Admin@123
-    - OpenSocial URL: https://opensocial.ddev.site (or opensocial1, opensocial2, etc.)
-    - Moodle URL: https://moodle.ddev.site (or moodle1, moodle2, etc.)
+    - Admin password: admin
+    - OpenSocial URL: https://opensocial.ddev.site (auto-increments if conflict)
+    - Moodle URL: https://moodle.ddev.site (auto-increments if conflict)
 
 NOTES:
     - Script must be run with sudo/root privileges
     - URLs will auto-increment if conflicts detected (opensocial -> opensocial1 -> opensocial2)
     - Script is idempotent - safe to run multiple times
     - Checks actual system state, not checkpoint files
+    - Interactive mode: Composer may show prompts for decisions
+    - Non-interactive mode (--defaults): Composer runs without prompts
+
+FILES:
+    config.yml                                    - Configuration file (optional)
+    opensocial_moodle_ddev_credentials.txt        - Generated credentials
+    opensocial/                                   - OpenSocial installation
+    moodle/                                       - Moodle installation
 
 EOF
 }
@@ -108,6 +125,49 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 print_status "Script directory: $SCRIPT_DIR"
 print_status "Files will be stored in: $SCRIPT_DIR"
 
+# Simple YAML parser function
+parse_yaml() {
+    local yaml_file="$1"
+    local prefix="$2"
+    
+    if [ ! -f "$yaml_file" ]; then
+        return 1
+    fi
+    
+    local s='[[:space:]]*'
+    local w='[a-zA-Z0-9_]*'
+    local fs=$(echo @|tr @ '\034')
+    
+    sed -ne "s|^\($s\):|\1|" \
+         -e "s|^\($s\)\($w\)$s:$s[\"']\(.*\)[\"']$s\$|\1$fs\2$fs\3|p" \
+         -e "s|^\($s\)\($w\)$s:$s\(.*\)$s\$|\1$fs\2$fs\3|p" "$yaml_file" |
+    awk -F"$fs" '{
+        indent = length($1)/2;
+        vname[indent] = $2;
+        for (i in vname) {if (i > indent) {delete vname[i]}}
+        if (length($3) > 0) {
+            vn=""; for (i=0; i<indent; i++) {vn=(vn)(vname[i])("_")}
+            printf("%s%s%s=\"%s\"\n", "'$prefix'",vn, $2, $3);
+        }
+    }' | grep -v "^#"
+}
+
+# Load configuration from YAML file
+load_config() {
+    local config_file="$SCRIPT_DIR/config.yml"
+    
+    if [ -f "$config_file" ]; then
+        print_status "Loading configuration from: $config_file"
+        eval $(parse_yaml "$config_file" "CONFIG_")
+        print_status "✓ Configuration loaded"
+        return 0
+    else
+        print_warning "Config file not found: $config_file"
+        print_warning "Using hardcoded defaults"
+        return 1
+    fi
+}
+
 # Function to check if a DDEV site URL is already in use
 check_url_available() {
     local project_name=$1
@@ -149,55 +209,92 @@ if [ "$1" = "--defaults" ] || [ "$1" = "-d" ]; then
     echo ""
 fi
 
+# Load configuration from YAML file if using defaults
+if [ "$USE_DEFAULTS" = true ]; then
+    load_config
+fi
+
 # Configuration variables
 print_section "Configuration"
 
+# Admin credentials - use YAML config or hardcoded defaults
+if [ "$USE_DEFAULTS" = true ] && [ -n "$CONFIG_admin_email" ]; then
+    ADMIN_EMAIL="${CONFIG_admin_email}"
+    ADMIN_USER="${CONFIG_admin_username}"
+    ADMIN_PASS="${CONFIG_admin_password}"
+    print_status "Using admin credentials from config file"
+else
+    # Interactive mode or no config file
+    ADMIN_USER="admin"
+    ADMIN_PASS="admin"
+    if [ "$USE_DEFAULTS" = true ]; then
+        ADMIN_EMAIL="admin@example.com"
+        print_status "Using default admin email: $ADMIN_EMAIL"
+    else
+        read -p "Enter admin email [admin@example.com]: " ADMIN_EMAIL
+        ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+    fi
+fi
+
 # OpenSocial Configuration
-OPENSOCIAL_PROJECT_BASE="${OPENSOCIAL_PROJECT:-opensocial}"
+if [ "$USE_DEFAULTS" = true ] && [ -n "$CONFIG_opensocial_project_name" ]; then
+    OPENSOCIAL_PROJECT_BASE="${CONFIG_opensocial_project_name}"
+    OPENSOCIAL_VERSION="${CONFIG_opensocial_version}"
+    OPENSOCIAL_PHP_VERSION="${CONFIG_opensocial_php_version}"
+    OPENSOCIAL_MYSQL_VERSION="${CONFIG_opensocial_mysql_version}"
+    OPENSOCIAL_NODEJS_VERSION="${CONFIG_opensocial_nodejs_version}"
+    OPENSOCIAL_SITE_NAME="${CONFIG_opensocial_site_name}"
+else
+    OPENSOCIAL_PROJECT_BASE="${OPENSOCIAL_PROJECT:-opensocial}"
+    OPENSOCIAL_VERSION="${OPENSOCIAL_VERSION:-dev-master}"
+    OPENSOCIAL_PHP_VERSION="8.2"
+    OPENSOCIAL_MYSQL_VERSION="8.0"
+    OPENSOCIAL_NODEJS_VERSION="18"
+    OPENSOCIAL_SITE_NAME="OpenSocial Community"
+fi
+
 OPENSOCIAL_PROJECT=$(check_url_available "$OPENSOCIAL_PROJECT_BASE")
 print_status "OpenSocial project name: $OPENSOCIAL_PROJECT"
 
-OPENSOCIAL_VERSION="${OPENSOCIAL_VERSION:-dev-master}"
-OPENSOCIAL_PHP_VERSION="8.2"
-OPENSOCIAL_MYSQL_VERSION="8.0"
-OPENSOCIAL_NODEJS_VERSION="18"
-
 # Moodle Configuration
-MOODLE_PROJECT_BASE="${MOODLE_PROJECT:-moodle}"
+if [ "$USE_DEFAULTS" = true ] && [ -n "$CONFIG_moodle_project_name" ]; then
+    MOODLE_PROJECT_BASE="${CONFIG_moodle_project_name}"
+    MOODLE_VERSION="${CONFIG_moodle_version}"
+    MOODLE_PHP_VERSION="${CONFIG_moodle_php_version}"
+    MOODLE_MYSQL_VERSION="${CONFIG_moodle_mysql_version}"
+    MOODLE_FULLNAME="${CONFIG_moodle_fullname}"
+    MOODLE_SHORTNAME="${CONFIG_moodle_shortname}"
+else
+    MOODLE_PROJECT_BASE="${MOODLE_PROJECT:-moodle}"
+    MOODLE_VERSION="MOODLE_404_STABLE"
+    MOODLE_PHP_VERSION="8.1"
+    MOODLE_MYSQL_VERSION="8.0"
+    MOODLE_FULLNAME="Moodle LMS"
+    MOODLE_SHORTNAME="Moodle"
+fi
+
 MOODLE_PROJECT=$(check_url_available "$MOODLE_PROJECT_BASE")
 print_status "Moodle project name: $MOODLE_PROJECT"
-
-MOODLE_PHP_VERSION="8.1"
-MOODLE_MYSQL_VERSION="8.0"
-MOODLE_VERSION="MOODLE_404_STABLE"
-
-# Admin email configuration
-if [ "$USE_DEFAULTS" = true ]; then
-    ADMIN_EMAIL="admin@example.com"
-    print_status "Using default admin email: $ADMIN_EMAIL"
-else
-    read -p "Enter admin email [admin@example.com]: " ADMIN_EMAIL
-    ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
-fi
 
 # OAuth Configuration
 OAUTH_CLIENT_ID=$(cat /proc/sys/kernel/random/uuid)
 OAUTH_CLIENT_SECRET=$(openssl rand -hex 32)
 
-# Site configurations
-OPENSOCIAL_SITE_NAME="OpenSocial Community"
-OPENSOCIAL_ADMIN_USER="admin"
-OPENSOCIAL_ADMIN_PASS="Admin@123"
+# Site configurations using loaded config values
+OPENSOCIAL_ADMIN_USER="$ADMIN_USER"
+OPENSOCIAL_ADMIN_PASS="$ADMIN_PASS"
 OPENSOCIAL_URL="https://${OPENSOCIAL_PROJECT}.ddev.site"
 
-MOODLE_ADMIN_USER="admin"
-MOODLE_ADMIN_PASS="Admin@123"
+MOODLE_ADMIN_USER="$ADMIN_USER"
+MOODLE_ADMIN_PASS="$ADMIN_PASS"
 MOODLE_URL="https://${MOODLE_PROJECT}.ddev.site"
 
 print_status "Configuration set:"
 echo "  OpenSocial URL: $OPENSOCIAL_URL"
 echo "  Moodle URL: $MOODLE_URL"
 echo "  Admin Email: $ADMIN_EMAIL"
+echo "  Admin Username: $ADMIN_USER"
+echo "  Admin Password: $ADMIN_PASS"
 echo "  Storage Location: $SCRIPT_DIR"
 echo ""
 
@@ -999,8 +1096,8 @@ if ! check_moodle_installed; then
             --dbname='$DB_NAME' \
             --dbuser='$DB_USER' \
             --dbpass='$DB_PASS' \
-            --fullname='Moodle LMS' \
-            --shortname='Moodle' \
+            --fullname='$MOODLE_FULLNAME' \
+            --shortname='$MOODLE_SHORTNAME' \
             --adminuser='$MOODLE_ADMIN_USER' \
             --adminpass='$MOODLE_ADMIN_PASS' \
             --adminemail='$ADMIN_EMAIL' \
@@ -1027,8 +1124,8 @@ if ! check_moodle_installed; then
                     --dbname='$DB_NAME' \
                     --dbuser='$DB_USER' \
                     --dbpass='$DB_PASS' \
-                    --fullname='Moodle LMS' \
-                    --shortname='Moodle' \
+                    --fullname='$MOODLE_FULLNAME' \
+                    --shortname='$MOODLE_SHORTNAME' \
                     --adminuser='$MOODLE_ADMIN_USER' \
                     --adminpass='$MOODLE_ADMIN_PASS' \
                     --adminemail='$ADMIN_EMAIL' \
