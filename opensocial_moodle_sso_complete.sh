@@ -860,11 +860,22 @@ if ! check_opensocial_composer_installed || [ "$FORCE_INSTALL" = true ]; then
             su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project rjzaar/commons_template:$OPENSOCIAL_VERSION . --no-interaction"
         fi
         
+        # Fix composer.json to require the correct version
+        if [ "$OPENSOCIAL_VERSION" != "dev-master" ]; then
+            print_doing "Updating composer.json to require Open Social $OPENSOCIAL_VERSION"
+            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer require goalgorilla/open_social:~$OPENSOCIAL_VERSION --no-update"
+        fi
+        
         # FIX: Update composer dependencies to regenerate lock file and fix conflicts
-        print_doing "Updating Composer dependencies to fix lock file conflicts"
-        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer update --no-interaction --with-all-dependencies" || {
-            print_warning "Composer update encountered issues, attempting to continue..."
-        }
+        print_doing "Updating Composer dependencies (this may take 5-10 minutes)"
+        if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer update --no-interaction --with-all-dependencies 2>&1 | grep -v 'Deprecated'"; then
+            print_warning "Composer update encountered issues, trying with --no-dev"
+            if ! su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer update --no-dev --no-interaction 2>&1 | grep -v 'Deprecated'"; then
+                print_error "Composer update failed. You may need to manually fix composer.json"
+                print_error "Try running: cd '$OPENSOCIAL_DIR' && ddev composer update"
+                exit 1
+            fi
+        fi
     else
         su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer install $COMPOSER_FLAGS"
     fi
