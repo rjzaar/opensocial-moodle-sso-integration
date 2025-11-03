@@ -925,7 +925,7 @@ if ! check_opensocial_installed || [ "$FORCE_INSTALL" = true ]; then
         if [ -f "$SETTINGS_DIR/settings.php" ]; then
             su - $ACTUAL_USER -c "chmod 666 '$SETTINGS_DIR/settings.php'" 2>/dev/null || true
             
-            if ! grep -q "\$settings\['file_private_path'\]" "$SETTINGS_DIR/settings.php"; then
+            if ! grep -q "\$settings\['file_private_path'\] =  '../private';" "$SETTINGS_DIR/settings.php"; then
                 cat >> "$SETTINGS_DIR/settings.php" <<'EOF'
 
 /**
