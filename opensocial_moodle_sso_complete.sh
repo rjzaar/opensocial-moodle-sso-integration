@@ -959,6 +959,25 @@ else
     print_skipping "OpenSocial installation (already complete)"
 fi
 
+print_step "Fixing Ultimate Cron Drush compatibility"
+print_checking "Ultimate Cron module status"
+if su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pml --status=enabled 2>/dev/null | grep -q ultimate_cron"; then
+    print_warning "Ultimate Cron detected - causes Drush compatibility issues with newer versions"
+    print_doing "Uninstalling Ultimate Cron module"
+    
+    # Uninstall Ultimate Cron to fix Drush logger errors
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush pm:uninstall ultimate_cron -y" 2>/dev/null || true
+    
+    # Clear cache
+    print_doing "Clearing Drupal cache"
+    su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev drush cr" 2>/dev/null || true
+    
+    print_status "✓ Ultimate Cron uninstalled - Drush commands will now work properly"
+    print_status "Note: Ultimate Cron is not needed - DDEV handles cron scheduling"
+else
+    print_skipping "Ultimate Cron compatibility check (module not installed or already removed)"
+fi
+
 ################################################################################
 # PART 4: MOODLE INSTALLATION
 ################################################################################
