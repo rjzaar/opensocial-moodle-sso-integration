@@ -755,9 +755,13 @@ if ! check_opensocial_dir_exists || [ "$FORCE_INSTALL" = true ]; then
     print_doing "Creating OpenSocial directory"
     
     if [ ! -d "$OPENSOCIAL_DIR" ] || [ "$FORCE_INSTALL" = true ]; then
-        mkdir -p "$OPENSOCIAL_DIR" || su - $ACTUAL_USER -c "mkdir -p '$OPENSOCIAL_DIR'"
+        # Create directory as actual user
+        su - $ACTUAL_USER -c "mkdir -p '$OPENSOCIAL_DIR'"
         print_status "Directory created: $OPENSOCIAL_DIR"
     fi
+    
+    # Ensure proper ownership
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$OPENSOCIAL_DIR"
     
     if [ -d "$OPENSOCIAL_DIR" ] && [ -w "$OPENSOCIAL_DIR" ]; then
         print_status "OpenSocial directory ready"
@@ -767,6 +771,8 @@ if ! check_opensocial_dir_exists || [ "$FORCE_INSTALL" = true ]; then
     fi
 else
     print_skipping "Directory creation (already exists)"
+    # Ensure proper ownership even if skipping
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$OPENSOCIAL_DIR" 2>/dev/null || true
 fi
 
 print_step "Configuring DDEV for OpenSocial"
@@ -774,14 +780,22 @@ print_checking "DDEV configuration files"
 if ! check_opensocial_ddev_configured || [ "$FORCE_INSTALL" = true ]; then
     print_doing "Setting up DDEV configuration"
     
+    # Ensure directory is owned by actual user
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$OPENSOCIAL_DIR"
+    
+    # Create html directory if it doesn't exist
+    if [ ! -d "$OPENSOCIAL_DIR/html" ]; then
+        print_doing "Creating docroot directory"
+        su - $ACTUAL_USER -c "mkdir -p '$OPENSOCIAL_DIR/html'"
+    fi
+    
     if [ ! -f "$OPENSOCIAL_DIR/.ddev/config.yaml" ] || [ "$FORCE_INSTALL" = true ]; then
         su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev config --project-type=drupal \
             --docroot=html \
             --php-version=$OPENSOCIAL_PHP_VERSION \
             --database=mysql:$OPENSOCIAL_MYSQL_VERSION \
             --nodejs-version=$OPENSOCIAL_NODEJS_VERSION \
-            --project-name='$OPENSOCIAL_PROJECT' \
-            --create-docroot"
+            --project-name='$OPENSOCIAL_PROJECT'"
         print_status "Base DDEV config created"
     fi
     
@@ -935,13 +949,19 @@ if ! check_moodle_dir_exists || [ "$FORCE_INSTALL" = true ]; then
     print_doing "Creating Moodle directory"
     
     if [ ! -d "$MOODLE_DIR" ] || [ "$FORCE_INSTALL" = true ]; then
-        mkdir -p "$MOODLE_DIR" || su - $ACTUAL_USER -c "mkdir -p '$MOODLE_DIR'"
+        # Create directory as actual user
+        su - $ACTUAL_USER -c "mkdir -p '$MOODLE_DIR'"
         print_status "Directory created: $MOODLE_DIR"
     fi
+    
+    # Ensure proper ownership
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$MOODLE_DIR"
     
     print_status "Moodle directory ready"
 else
     print_skipping "Directory creation (already exists)"
+    # Ensure proper ownership even if skipping
+    chown -R $ACTUAL_USER:$ACTUAL_USER "$MOODLE_DIR" 2>/dev/null || true
 fi
 
 print_step "Downloading Moodle"
