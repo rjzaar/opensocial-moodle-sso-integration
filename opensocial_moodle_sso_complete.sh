@@ -2,10 +2,11 @@
 
 ################################################################################
 # OpenSocial + Moodle Fully Integrated SSO Installation Script (DDEV Version)
-# IMPROVED VERSION with cleanup and better step tracking
+# IMPROVED VERSION with cleanup, better step tracking, and composer fix
 # Both platforms installed in DDEV to avoid port conflicts
 # Based on: https://github.com/rjzaar/opensocial-moodle-sso-integration
 # Modified to use module folders instead of inline creation
+# FIXED: Added composer update to resolve lock file conflicts
 ################################################################################
 
 set -e  # Exit on any error
@@ -94,6 +95,7 @@ FEATURES:
     ✓ Cleanup previous installations
     ✓ Progress tracking
     ✓ Detailed status reporting
+    ✓ Composer lock file conflict resolution
 
 EOF
 }
@@ -568,7 +570,7 @@ if [ "$USE_DEFAULTS" = true ] && [ -n "$CONFIG_opensocial_project_name" ]; then
     OPENSOCIAL_SITE_NAME="${CONFIG_opensocial_site_name}"
 else
     OPENSOCIAL_PROJECT_BASE="${OPENSOCIAL_PROJECT:-opensocial}"
-    OPENSOCIAL_VERSION="${OPENSOCIAL_VERSION:-dev-master}"
+    OPENSOCIAL_VERSION="${OPENSOCIAL_VERSION:-12.4.13}"
     OPENSOCIAL_PHP_VERSION="8.2"
     OPENSOCIAL_MYSQL_VERSION="8.0"
     OPENSOCIAL_NODEJS_VERSION="18"
@@ -849,11 +851,20 @@ if ! check_opensocial_composer_installed || [ "$FORCE_INSTALL" = true ]; then
     fi
     
     if [ ! -f "$OPENSOCIAL_DIR/composer.json" ] || [ "$FORCE_INSTALL" = true ]; then
+        # Determine which command to use based on version
         if [ "$OPENSOCIAL_VERSION" = "dev-master" ]; then
+            print_doing "Installing dev-master version"
             su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project rjzaar/commons_template:dev-master . --no-interaction --stability dev"
         else
+            print_doing "Installing version $OPENSOCIAL_VERSION"
             su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project rjzaar/commons_template:$OPENSOCIAL_VERSION . --no-interaction"
         fi
+        
+        # FIX: Update composer dependencies to regenerate lock file and fix conflicts
+        print_doing "Updating Composer dependencies to fix lock file conflicts"
+        su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer update --no-interaction --with-all-dependencies" || {
+            print_warning "Composer update encountered issues, attempting to continue..."
+        }
     else
         su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer install $COMPOSER_FLAGS"
     fi
