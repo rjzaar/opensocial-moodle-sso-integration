@@ -706,9 +706,9 @@ if ! check_opensocial_composer_installed; then
         su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer install $COMPOSER_FLAGS"
     else
         if [ "$OPENSOCIAL_VERSION" = "dev-master" ]; then
-            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project goalgorilla/social_template:dev-master . --no-interaction --stability dev"
+            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project rjzaar/commons_template:dev-master . --no-interaction --stability dev"
         else
-            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project goalgorilla/social_template:$OPENSOCIAL_VERSION . --no-interaction"
+            su - $ACTUAL_USER -c "cd '$OPENSOCIAL_DIR' && ddev composer create-project rjzaar/commons_template:$OPENSOCIAL_VERSION . --no-interaction"
         fi
     fi
     
