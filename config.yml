@@ -10,7 +10,7 @@ admin:
 opensocial:
   project_name: "opensocial"
   site_name: "OpenSocial Community"
-  version: "12.4.13"
+  version: "dev-master"
   php_version: "8.2"
   mysql_version: "8.0"
   nodejs_version: "18"
